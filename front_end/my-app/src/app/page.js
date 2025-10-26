@@ -1,9 +1,10 @@
 import styles from './page.module.css';
 import Map from './map';
+import Filters from './filters';
 
 export const metadata = {
   title: 'TOIL - Oil & Gas Well Tracking',
-  description: 'Track and filter oil and gas wells',
+  description: 'Data Dashboard for Texas Wells',
 }
 
 export default function Home() {
@@ -27,7 +28,7 @@ export default function Home() {
       <div className={styles.main}>
         <aside className={styles.filterPanel}>
           <h2 className={styles.filterTitle}>Filter & Search Wells</h2>
-          {/* Filter content will go here */}
+          <Filters />
         </aside>
 
         <main className={styles.content}>
