@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import styles from './Filters.module.css';
+import styles from './filters.module.css';
 
 export default function Filters() {
   const [filters, setFilters] = useState({
