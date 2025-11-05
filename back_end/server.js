@@ -37,8 +37,8 @@ app.get('/api/wells', async (req, res) => {
     const sampleSize = getSampleSize(zoomLevel);
 
     let query = supabase
-      .from('well_data')
-      .select('gid, api, wellid, lat83, long83')
+      .from('well_locations')
+      .select('surface_id, api, wellid, lat83, long83')
       .gte('lat83', parseFloat(minLat))
       .lte('lat83', parseFloat(maxLat))
       .gte('long83', parseFloat(minLon))
@@ -64,7 +64,7 @@ app.get('/api/wells', async (req, res) => {
     const features = data.map(well => ({
       type: 'Feature',
       properties: {
-        id: well.gid,
+        id: well.surface_id,
         api: well.api,
         wellid: well.wellid
       },
@@ -91,9 +91,9 @@ app.get('/api/wells/:id', async (req, res) => {
     const { id } = req.params;
 
     const { data, error } = await supabase
-      .from('well_data')
+      .from('well_locations')
       .select('*')
-      .eq('gid', id)
+      .eq('surface_id', id)
       .single();
 
     if (error) {
@@ -112,7 +112,7 @@ app.get('/api/wells/:id', async (req, res) => {
 app.get('/api/wells/stats', async (req, res) => {
   try {
     const { count, error } = await supabase
-      .from('well_data')
+      .from('well_locations')
       .select('*', { count: 'exact', head: true });
 
     if (error) {
