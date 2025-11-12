@@ -17,10 +17,11 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Helper function to get sample size based on zoom level
 function getSampleSize(zoom) {
-  if (zoom < 7) return 500;
-  if (zoom < 9) return 1000;
-  if (zoom < 11) return 5000;
-  if (zoom < 13) return 10000;
+  if (zoom < 5) return 100;
+  if (zoom < 7) return 1000;
+  if (zoom < 9) return 10000;
+  if (zoom < 11) return 10000;
+  if (zoom < 13) return 100000;
   return 50000;
 }
 
@@ -36,32 +37,52 @@ app.get('/api/wells', async (req, res) => {
     const zoomLevel = parseFloat(zoom);
     const sampleSize = getSampleSize(zoomLevel);
 
-    let query = supabase
+    // 1️⃣ Query all wells in bounding box
+    let { data: wells, error } = await supabase
       .from('well_locations')
       .select('surface_id, api, wellid, lat83, long83')
       .gte('lat83', parseFloat(minLat))
       .lte('lat83', parseFloat(maxLat))
       .gte('long83', parseFloat(minLon))
-      .lte('long83', parseFloat(maxLon));
-
-    if (api) {
-      query = query.ilike('api', `%${api}%`);
-    }
-
-    if (wellid) {
-      query = query.ilike('wellid', `%${wellid}%`);
-    }
-
-    query = query.limit(sampleSize);
-
-    const { data, error } = await query;
+      .lte('long83', parseFloat(maxLon))
+      .limit(sampleSize);
 
     if (error) {
       console.error('Database error:', error);
       return res.status(500).json({ error: 'Database query failed' });
     }
 
-    const features = data.map(well => ({
+    // Apply filters for API and wellid
+    if (api) {
+      wells = wells.filter(w => w.api && w.api.toLowerCase().includes(api.toLowerCase()));
+    }
+
+    if (wellid) {
+      wells = wells.filter(w => w.wellid && w.wellid.toLowerCase().includes(wellid.toLowerCase()));
+    }
+
+    // 2️⃣ Filter to only include wells that exist in well_information
+    const apis = wells.map(w => w.api).filter(Boolean);
+
+    if (apis.length > 0) {
+      // Get list of APIs that exist in well_information
+      const { data: validApis, error: apiError } = await supabase
+        .from('well_information')
+        .select('api_no')
+        .in('api_no', apis);
+
+      if (apiError) {
+        console.error('Error checking well_information:', apiError);
+      }
+
+      const validApiSet = new Set(validApis.map(a => a.api_no));
+      wells = wells.filter(w => validApiSet.has(w.api));
+    } else {
+      wells = [];
+    }
+
+    // 3️⃣ Build GeoJSON features
+    const features = wells.map(well => ({
       type: 'Feature',
       properties: {
         id: well.surface_id,
@@ -85,23 +106,69 @@ app.get('/api/wells', async (req, res) => {
   }
 });
 
+
 // GET /api/wells/:id - Get single well details
 app.get('/api/wells/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { data, error } = await supabase
+    // Get basic location data
+    const { data: locationData, error: locationError } = await supabase
       .from('well_locations')
       .select('*')
       .eq('surface_id', id)
       .single();
 
-    if (error) {
-      console.error('Database error:', error);
-      return res.status(500).json({ error: 'Database query failed' });
+    if (locationError) {
+      console.error('Location query error:', locationError);
+      return res.status(404).json({ error: 'Well not found' });
     }
 
-    res.json(data);
+    // Get detailed well information using API number (both are text fields)
+    let detailData = null;
+    let detailError = null;
+
+    if (locationData.api) {
+      console.log(`Querying well_information for API: ${locationData.api}`);
+      
+      const result = await supabase
+        .from('well_information')
+        .select('*')
+        .eq('api_no', locationData.api)
+        .maybeSingle();
+
+      detailData = result.data;
+      detailError = result.error;
+      
+      if (detailError) {
+        console.error('Detail query error:', detailError);
+      }
+      
+      if (!detailData) {
+        console.log(`No match found in well_information for API: ${locationData.api}`);
+      }
+    }
+
+    if (detailError) {
+      console.error('Detail query error:', detailError);
+    }
+
+    // If no detailed data found, still return location data
+    if (!detailData) {
+      console.log(`No detailed info found for API: ${locationData.api}`);
+      return res.json({
+        ...locationData,
+        detailsAvailable: false
+      });
+    }
+
+    // Combine both datasets
+    res.json({
+      ...locationData,
+      ...detailData,
+      detailsAvailable: true
+    });
+
   } catch (error) {
     console.error('Error fetching well:', error);
     res.status(500).json({ error: 'Internal server error' });
