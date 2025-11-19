@@ -4,19 +4,22 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { fetchWells } from './utils/api';
 
 export default function Map() {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const markersRef = useRef([]);
+  const markerClusterGroupRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
   // Function to clear all markers
   const clearMarkers = () => {
-    markersRef.current.forEach(marker => marker.remove());
-    markersRef.current = [];
+    if (markerClusterGroupRef.current) {
+      markerClusterGroupRef.current.clearLayers();
+    }
   };
 
   // Function to load and display wells
@@ -33,27 +36,63 @@ export default function Map() {
 
       if (!data.features) return;
 
-      const L = await import('leaflet');
+      const L = (await import('leaflet')).default;
+      await import('leaflet.markercluster');
 
-      // Create marker for each well
-      data.features.forEach(well => {
-        const [lon, lat] = well.geometry.coordinates;
-
-        const wellIcon = L.icon({
-          iconUrl:
-            'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNiIgY3k9IjYiIHI9IjQiIGZpbGw9IiNmNTlkNTAiIHN0cm9rZT0iI2RjMjYyNiIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48L3N2Zz4=',
-          iconSize: [12, 12],
-          iconAnchor: [6, 6],
+      // Create cluster group if it doesn't exist
+      if (!markerClusterGroupRef.current) {
+        markerClusterGroupRef.current = L.markerClusterGroup({
+          // Customize cluster appearance
+          iconCreateFunction: function(cluster) {
+            const count = cluster.getChildCount();
+            let size = 'small';
+            let c = ' marker-cluster-';
+            
+            if (count < 10) {
+              size = 'small';
+            } else if (count < 100) {
+              size = 'medium';
+            } else {
+              size = 'large';
+            }
+            
+            return L.divIcon({
+              html: '<div><span>' + count + '</span></div>',
+              className: 'marker-cluster' + c + size,
+              iconSize: L.point(40, 40)
+            });
+          },
+          // Performance options
+          chunkedLoading: true,
+          chunkInterval: 200,
+          chunkDelay: 50,
+          maxClusterRadius: 80,
+          spiderfyOnMaxZoom: true,
+          showCoverageOnHover: false,
+          zoomToBoundsOnClick: true
         });
 
+        mapInstanceRef.current.addLayer(markerClusterGroupRef.current);
+      }
+
+      const wellIcon = L.icon({
+        iconUrl:
+          'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNiIgY3k9IjYiIHI9IjQiIGZpbGw9IiNmNTlkNTAiIHN0cm9rZT0iI2RjMjYyNiIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48L3N2Zz4=',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      });
+
+      // Create markers and add to cluster group
+      const markers = data.features.map(well => {
+        const [lon, lat] = well.geometry.coordinates;
+
         const popupContent = `
-          <div style="text-align: center;">
-            <strong>Well: ${well.properties.wellid || 'N/A'}</strong><br>
-            API: ${well.properties.api || 'N/A'}<br>
+          <div class="${styles.popupContent}">
+            <strong class="${styles.popupTitle}">Well: ${well.properties.wellid || 'N/A'}</strong>
+            <div class="${styles.popupApi}">API: ${well.properties.api || 'N/A'}</div>
             <button 
-              class="view-details-btn"
+              class="${styles.popupButton} view-details-btn"
               data-id="${well.properties.id}"
-              style="margin-top: 8px; padding: 6px 12px; background-color: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;"
             >
               View Details
             </button>
@@ -63,10 +102,7 @@ export default function Map() {
         const marker = L.marker([lat, lon], { icon: wellIcon })
           .bindPopup(popupContent);
 
-        marker.addTo(mapInstanceRef.current);
-        markersRef.current.push(marker);
-
-        //  Show popup on hover (no click needed)
+        // Show popup on hover
         marker.on('mouseover', function () {
           this.openPopup();
         });
@@ -81,16 +117,21 @@ export default function Map() {
 
         // Handle "View Details" button click in popup
         marker.on('popupopen', () => {
-        const popupEl = document.querySelector('.view-details-btn');
+          const popupEl = document.querySelector('.view-details-btn');
           if (popupEl) {
             popupEl.addEventListener('click', () => {
               const id = popupEl.getAttribute('data-id');
-              // Open in a new tab
               window.open(`/wells/${id}`, '_blank');
             });
           }
         });
+
+        return marker;
       });
+
+      // Add all markers to cluster group at once (more efficient)
+      markerClusterGroupRef.current.addLayers(markers);
+
     } catch (error) {
       console.error('Error loading wells:', error);
     } finally {
@@ -113,7 +154,7 @@ export default function Map() {
           .then(texasGeoJSON => {
             const texasBorder = L.geoJSON(texasGeoJSON, {
               style: {
-                color: '#dc2626',
+                color: '#992626',
                 weight: 3,
                 fillColor: '#fef2f2',
                 fillOpacity: 0.15,

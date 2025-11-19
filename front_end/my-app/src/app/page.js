@@ -12,22 +12,30 @@ export default function Home() {
     <div className={styles.container}>
       <header className={styles.header}>
         <div className={styles.logo}>
-          <svg className={styles.logoIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M12 2L12 22M8 6L12 2L16 6M8 18L12 22L16 18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
+          <img className={styles.logoIcon} src="/ToilLogo.png" alt="TOIL Logo"></img>
           <h1 className={styles.logoText}>TOIL</h1>
         </div>
-        <button className={styles.userIcon}>
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <circle cx="12" cy="8" r="4"/>
-            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+        <button className={styles.helpButton} aria-label="Help">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <circle cx="12" cy="17" r="0.5" fill="currentColor"/>
           </svg>
         </button>
       </header>
 
       <div className={styles.main}>
         <aside className={styles.filterPanel}>
-          <h2 className={styles.filterTitle}>Filter & Search Wells</h2>
+          <div className={styles.filterHeader}>
+            <h2 className={styles.filterTitle}>Filters</h2>
+            <button className={styles.menuButton} aria-label="Menu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="3" y1="6" x2="21" y2="6"/>
+                <line x1="3" y1="12" x2="21" y2="12"/>
+                <line x1="3" y1="18" x2="21" y2="18"/>
+              </svg>
+            </button>
+          </div>
           <Filters />
         </aside>
 
