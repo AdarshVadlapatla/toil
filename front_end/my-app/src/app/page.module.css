@@ -29,7 +29,7 @@
 }
 
 .logoText {
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: 800;
   margin: 0;
   letter-spacing: 0.05em;
@@ -125,6 +125,12 @@
   position: relative;
 }
 
+/* Custom Cluster Icon Styles */
+.mapContainer :global(.custom-cluster-icon) {
+  background: transparent !important;
+  border: none !important;
+}
+
 /* Leaflet Custom Popup Styles */
 .mapContainer :global(.leaflet-popup-content-wrapper) {
   background-color: #2d3748;
@@ -177,7 +183,7 @@
 }
 
 .popupButton:hover {
-  background-color: #992626;
+  background-color: #7f1d1d;
 }
 
 /* Leaflet Zoom Controls */
@@ -228,6 +234,5 @@
 }
 
 .mapContainer :global(.leaflet-control-attribution a:hover) {
-  color: #992626 !important;
+  color: #7f1d1d !important;
 }
-
