@@ -4,77 +4,53 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet.markercluster/dist/MarkerCluster.css';
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { fetchWells } from './utils/api';
 
 export default function Map() {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const markerClusterGroupRef = useRef(null);
+  const markersLayerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const loadWellsTimeoutRef = useRef(null);
 
   // Function to clear all markers
   const clearMarkers = () => {
-    if (markerClusterGroupRef.current) {
-      markerClusterGroupRef.current.clearLayers();
+    if (markersLayerRef.current && mapInstanceRef.current) {
+      mapInstanceRef.current.removeLayer(markersLayerRef.current);
+      markersLayerRef.current = null;
     }
   };
-
-  // Function to load and display wells
+  
+  // Function to load and display wells with clustering
   const loadWells = async () => {
     if (!mapInstanceRef.current) return;
 
-    setIsLoading(true);
-    clearMarkers();
+    // Clear any pending load
+    if (loadWellsTimeoutRef.current) {
+      clearTimeout(loadWellsTimeoutRef.current);
+    }
+
+    loadWellsTimeoutRef.current = setTimeout(async () => {
+      setIsLoading(true);
+      clearMarkers(); // Clear BEFORE fetching new data
 
     try {
       const bounds = mapInstanceRef.current.getBounds();
       const zoom = mapInstanceRef.current.getZoom();
       const data = await fetchWells(bounds, zoom);
 
-      if (!data.features) return;
-
-      const L = (await import('leaflet')).default;
-      await import('leaflet.markercluster');
-
-      // Create cluster group if it doesn't exist
-      if (!markerClusterGroupRef.current) {
-        markerClusterGroupRef.current = L.markerClusterGroup({
-          // Customize cluster appearance
-          iconCreateFunction: function(cluster) {
-            const count = cluster.getChildCount();
-            let size = 'small';
-            let c = ' marker-cluster-';
-            
-            if (count < 10) {
-              size = 'small';
-            } else if (count < 100) {
-              size = 'medium';
-            } else {
-              size = 'large';
-            }
-            
-            return L.divIcon({
-              html: '<div><span>' + count + '</span></div>',
-              className: 'marker-cluster' + c + size,
-              iconSize: L.point(40, 40)
-            });
-          },
-          // Performance options
-          chunkedLoading: true,
-          chunkInterval: 200,
-          chunkDelay: 50,
-          maxClusterRadius: 80,
-          spiderfyOnMaxZoom: true,
-          showCoverageOnHover: false,
-          zoomToBoundsOnClick: true
-        });
-
-        mapInstanceRef.current.addLayer(markerClusterGroupRef.current);
+      if (!data.features || data.features.length === 0) {
+        setIsLoading(false);
+        return;
       }
 
+      const L = (await import('leaflet')).default;
+
+      // Create a feature group to hold all markers
+      markersLayerRef.current = L.featureGroup();
+
+      // Icons
       const wellIcon = L.icon({
         iconUrl:
           'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNiIgY3k9IjYiIHI9IjQiIGZpbGw9IiNmNTlkNTAiIHN0cm9rZT0iI2RjMjYyNiIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48L3N2Zz4=',
@@ -82,18 +58,16 @@ export default function Map() {
         iconAnchor: [6, 6],
       });
 
-      // Create markers and add to cluster group
-      const markers = data.features.map(well => {
-        const [lon, lat] = well.geometry.coordinates;
+      // Always treat features as wells
+      data.features.forEach(feature => {
+        const [lon, lat] = feature.geometry.coordinates;
+        const well = feature.properties;
 
         const popupContent = `
           <div class="${styles.popupContent}">
-            <strong class="${styles.popupTitle}">Well: ${well.properties.wellid || 'N/A'}</strong>
-            <div class="${styles.popupApi}">API: ${well.properties.api || 'N/A'}</div>
-            <button 
-              class="${styles.popupButton} view-details-btn"
-              data-id="${well.properties.id}"
-            >
+            <strong class="${styles.popupTitle}">Well: ${well.wellid || 'N/A'}</strong>
+            <div class="${styles.popupApi}">API: ${well.api || 'N/A'}</div>
+            <button class="${styles.popupButton} view-details-btn" data-id="${well.id}">
               View Details
             </button>
           </div>
@@ -102,42 +76,32 @@ export default function Map() {
         const marker = L.marker([lat, lon], { icon: wellIcon })
           .bindPopup(popupContent);
 
-        // Show popup on hover
         marker.on('mouseover', function () {
           this.openPopup();
         });
+
         marker.on('mouseout', function () {
           this.closePopup();
         });
 
-        // Click on marker opens well details in new tab
         marker.on('click', function () {
-          window.open(`/wells/${well.properties.id}`, '_blank');
+          window.open(`/wells/${well.id}`, '_blank');
         });
 
-        // Handle "View Details" button click in popup
-        marker.on('popupopen', () => {
-          const popupEl = document.querySelector('.view-details-btn');
-          if (popupEl) {
-            popupEl.addEventListener('click', () => {
-              const id = popupEl.getAttribute('data-id');
-              window.open(`/wells/${id}`, '_blank');
-            });
-          }
-        });
-
-        return marker;
+        markersLayerRef.current.addLayer(marker);
       });
 
-      // Add all markers to cluster group at once (more efficient)
-      markerClusterGroupRef.current.addLayers(markers);
+
+      // Add all markers to map
+      mapInstanceRef.current.addLayer(markersLayerRef.current);
 
     } catch (error) {
       console.error('Error loading wells:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, 300); // Wait 300ms after user stops moving/zooming
+};
 
   useEffect(() => {
     if (typeof window !== 'undefined' && mapRef.current && !mapInstanceRef.current) {
@@ -187,5 +151,25 @@ export default function Map() {
     };
   }, []);
 
-  return <div ref={mapRef} className={styles.mapContainer}></div>;
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div ref={mapRef} className={styles.mapContainer}></div>
+      {isLoading && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: '#992626',
+          color: 'white',
+          padding: '8px 12px',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+          fontSize: '14px'
+        }}>
+          Loading wells...
+        </div>
+      )}
+    </div>
+  );
 }

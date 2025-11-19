@@ -7,6 +7,10 @@ export const metadata = {
   description: 'Data Dashboard for Texas Wells',
 }
 
+// // Supabase client
+// const supabaseUrl = 'https://cybbfiogqisodsytxlnx.supabase.co';
+// const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5YmJmaW9ncWlzb2RzeXR4bG54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODU5MTksImV4cCI6MjA3NzE2MTkxOX0.qVeVI8geTuaO7ovJNV7EVY_ySHkHR7yvL8Oeyv6P4E0';
+
 export default function Home() {
   return (
     <div className={styles.container}>

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
+import Supercluster from 'supercluster';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -9,14 +10,13 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-
 // Supabase client
 const supabaseUrl = 'https://cybbfiogqisodsytxlnx.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5YmJmaW9ncWlzb2RzeXR4bG54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODU5MTksImV4cCI6MjA3NzE2MTkxOX0.qVeVI8geTuaO7ovJNV7EVY_ySHkHR7yvL8Oeyv6P4E0';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// GET /api/wells - Get ALL wells filtered ONLY by bounding box + API + wellid
+// GET /api/wells - Get wells without clustering
 app.get('/api/wells', async (req, res) => {
   try {
     const { zoom, minLat, maxLat, minLon, maxLon, api, wellid } = req.query;
@@ -27,61 +27,46 @@ app.get('/api/wells', async (req, res) => {
         .json({ error: 'zoom, minLat, maxLat, minLon, maxLon are required' });
     }
 
-    const zoomLevel = parseFloat(zoom);
+    console.log("Fetching wells");
 
-    // Query all wells in bounding box - NO sampling
-    let { data: wells, error } = await supabase
-      .from('well_locations')
-      .select('surface_id, api, wellid, lat83, long83')
-      .gte('lat83', parseFloat(minLat))
-      .lte('lat83', parseFloat(maxLat))
-      .gte('long83', parseFloat(minLon))
-      .lte('long83', parseFloat(maxLon));
+    const BATCH_SIZE = 1000;
+let wells = [];
+let start = 0;
 
-    if (error) {
-      console.error('Database error:', error);
-      return res.status(500).json({ error: 'Database query failed' });
-    }
+while (true) {
+  const end = start + BATCH_SIZE - 1;
 
-    // FILTER: API substring match (case-insensitive)
-    if (api) {
-      wells = wells.filter(
-        w => w.api && w.api.toLowerCase().includes(api.toLowerCase())
-      );
-    }
+  const { data: batch, error } = await supabase
+    .from('filtered_well_locations')
+    .select('surface_id, api, wellid, lat83, long83')
+    .gte('lat83', parseFloat(minLat))
+    .lte('lat83', parseFloat(maxLat))
+    .gte('long83', parseFloat(minLon))
+    .lte('long83', parseFloat(maxLon))
+    .range(start, end);
 
-    // FILTER: wellid substring match
-    if (wellid) {
-      wells = wells.filter(
-        w => w.wellid && w.wellid.toLowerCase().includes(wellid.toLowerCase())
-      );
-    }
+  if (error) {
+    console.error('Error fetching wells batch:', error);
+    break;
+  }
 
-    // --- Validate wells exist in well_information ---
-    const apis = wells.map(w => w.api).filter(Boolean);
+  if (!batch || batch.length === 0) {
+    // No more rows to fetch
+    break;
+  }
 
-    if (apis.length > 0) {
-      const chunkSize = 1000;
-      const validApiSet = new Set();
+  wells = wells.concat(batch);
+  console.log(`Fetched ${wells.length} wells so far...`);
 
-      for (let i = 0; i < apis.length; i += chunkSize) {
-        const chunk = apis.slice(i, i + chunkSize);
+  // Move to next batch
+  start += BATCH_SIZE;
+}
 
-        const { data: validApis, error: apiError } = await supabase
-          .from('well_information')
-          .select('api_no')
-          .in('api_no', chunk);
+console.log(`All wells fetched. Total: ${wells.length}`); 
 
-        if (apiError) console.error('Error checking well_information:', apiError);
-        else validApis.forEach(a => validApiSet.add(a.api_no));
-      }
+    console.log("Zoom:", zoom, "Wells:", apis.length);
 
-      wells = wells.filter(w => validApiSet.has(w.api));
-    } else {
-      wells = [];
-    }
-
-    // Convert to GeoJSON
+    // Convert to GeoJSON features
     const features = wells.map(well => ({
       type: 'Feature',
       properties: {
@@ -100,12 +85,13 @@ app.get('/api/wells', async (req, res) => {
       features,
       meta: {
         total: features.length,
-        zoom: zoomLevel,
-        sampling: false,
-      },
+        zoom: parseFloat(zoom),
+        clustered: false
+      }
     });
-  } catch (error) {
-    console.error('Error fetching wells:', error);
+
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -128,7 +114,7 @@ app.get('/api/wells/:id', async (req, res) => {
       return res.status(404).json({ error: 'Well not found' });
     }
 
-    // Get detailed well information using API number (both are text fields)
+    // Get detailed well information using API number
     let detailData = null;
     let detailError = null;
 
@@ -201,7 +187,7 @@ app.get('/api/wells/stats', async (req, res) => {
 // Health check
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'TOIL Backend API is running!',
+    message: 'TOIL Backend API is running with clustering!',
     status: 'healthy'
   });
 });
