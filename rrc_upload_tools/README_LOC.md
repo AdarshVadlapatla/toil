@@ -1,10 +1,10 @@
-# RRC Data Upload Tools
+# RRC Well Location Data Upload Tools
 
 Upload Texas Railroad Commission well data to Supabase `well_locations` table.
 
 ## Files
 
-- `upload_rrc_data.py` - Main script with 3 modes (download test, download+upload, upload local files)
+- `upload_loc_data.py` - Main script with 3 modes (download test, download+upload, upload local files)
 - `requirements.txt` - Dependencies
 
 ## Quick Start
