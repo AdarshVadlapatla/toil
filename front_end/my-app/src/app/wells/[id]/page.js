@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchWellDetails } from '../../utils/api';
+import HelpModal from '../../HelpModal';
 import styles from './page.module.css';
 
 export default function WellDetailPage() {
@@ -64,6 +65,7 @@ export default function WellDetailPage() {
         <button onClick={() => router.push('/')} className={styles.backButton}>
           ← Back to Map
         </button>
+        <HelpModal />
       </header>
 
       <main className={styles.main}>
