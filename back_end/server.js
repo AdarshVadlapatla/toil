@@ -18,8 +18,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 // In-memory cache for wells
 let wellsCache = null;
+let wellsWithDetailsCache = null;
 let superclusterIndex = null;
 let cacheLoadTime = null;
+let filterOptions = null;
 
 // Function to load all wells into memory
 async function loadAllWells() {
@@ -56,7 +58,59 @@ async function loadAllWells() {
   const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
   console.log(`All wells loaded! Total: ${wells.length} wells in ${loadTime} seconds`);
 
-  // Convert to GeoJSON features for Supercluster
+  wellsCache = wells;
+  cacheLoadTime = new Date();
+
+  return wells;
+}
+
+// Function to load well details for filtering
+async function loadWellDetails() {
+  console.log('Loading well details for filtering...');
+  const BATCH_SIZE = 1000;
+  let wellDetails = [];
+  let start = 0;
+
+  while (true) {
+    const end = start + BATCH_SIZE - 1;
+
+    const { data: batch, error } = await supabase
+      .from('filtered_well_information')
+      .select('api_no, county_name, district_code, oil_gas_code, completion_date, api_depth')
+      .range(start, end);
+
+    if (error) {
+      console.error('Error fetching well details batch:', error);
+      throw error;
+    }
+
+    if (!batch || batch.length === 0) {
+      break;
+    }
+
+    wellDetails = wellDetails.concat(batch);
+    console.log(`Loaded ${wellDetails.length} well details so far...`);
+
+    start += BATCH_SIZE;
+  }
+
+  console.log(`Well details loaded! Total: ${wellDetails.length}`);
+  wellsWithDetailsCache = wellDetails;
+
+  // Extract unique filter options
+  const counties = [...new Set(wellDetails.map(w => w.county_name).filter(Boolean))].sort();
+  const districts = [...new Set(wellDetails.map(w => w.district_code).filter(Boolean))].sort();
+
+  filterOptions = { counties, districts };
+  console.log(`Filter options ready: ${counties.length} counties, ${districts.length} districts`);
+
+  return wellDetails;
+}
+
+// Function to create supercluster index from filtered wells
+function createSuperclusterIndex(wells) {
+  console.log(`Creating Supercluster index for ${wells.length} wells...`);
+  
   const features = wells.map(well => ({
     type: 'Feature',
     properties: {
@@ -71,8 +125,6 @@ async function loadAllWells() {
     }
   }));
 
-  // Initialize Supercluster
-  console.log('Initializing Supercluster index...');
   const index = new Supercluster({
     radius: 60,
     maxZoom: 16,
@@ -82,18 +134,38 @@ async function loadAllWells() {
 
   index.load(features);
   console.log('Supercluster index ready!');
-
-  wellsCache = wells;
-  superclusterIndex = index;
-  cacheLoadTime = new Date();
-
-  return { wells, index };
+  
+  return index;
 }
 
-// GET /api/wells - Get wells with clustering
+// Initialize supercluster with all wells
+async function initializeSupercluster() {
+  if (wellsCache) {
+    superclusterIndex = createSuperclusterIndex(wellsCache);
+  }
+}
+
+// GET /api/filter-options - Get available filter options
+app.get('/api/filter-options', async (req, res) => {
+  try {
+    if (!filterOptions) {
+      return res.status(503).json({ 
+        error: 'Filter options are still loading.',
+        loading: true 
+      });
+    }
+
+    res.json(filterOptions);
+  } catch (error) {
+    console.error('Error fetching filter options:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/wells - Get wells with clustering and optional filtering
 app.get('/api/wells', async (req, res) => {
   try {
-    const { zoom, minLat, maxLat, minLon, maxLon } = req.query;
+    const { zoom, minLat, maxLat, minLon, maxLon, counties, districts, wellType, completionDateStart, completionDateEnd, depthMin, depthMax } = req.query;
 
     if (!zoom || !minLat || !maxLat || !minLon || !maxLon) {
       return res
@@ -102,11 +174,100 @@ app.get('/api/wells', async (req, res) => {
     }
 
     // Check if cache is loaded
-    if (!superclusterIndex) {
+    if (!wellsCache || !wellsWithDetailsCache) {
       return res.status(503).json({ 
         error: 'Wells data is still loading. Please try again in a moment.',
         loading: true 
       });
+    }
+
+    // Parse filters
+    const countyFilter = counties ? counties.split(',').filter(Boolean) : [];
+    const districtFilter = districts ? districts.split(',').filter(Boolean) : [];
+    const wellTypeFilter = wellType && wellType !== 'all' ? wellType : null;
+    const dateStart = completionDateStart || null;
+    const dateEnd = completionDateEnd || null;
+    const minDepth = depthMin ? parseFloat(depthMin) : null;
+    const maxDepth = depthMax ? parseFloat(depthMax) : null;
+
+    const hasFilters = countyFilter.length > 0 || districtFilter.length > 0 || wellTypeFilter || dateStart || dateEnd || minDepth !== null || maxDepth !== null;
+
+    let filteredWells = wellsCache;
+    let indexToUse = superclusterIndex;
+
+    // Apply filters if any are provided
+    if (hasFilters) {
+      console.log('Applying filters:', { 
+        counties: countyFilter.length, 
+        districts: districtFilter.length,
+        wellType: wellTypeFilter,
+        dateRange: dateStart || dateEnd ? `${dateStart} to ${dateEnd}` : 'none',
+        depthRange: minDepth !== null || maxDepth !== null ? `${minDepth} to ${maxDepth}` : 'none'
+      });
+      
+      // Create a map of API to well details for fast lookup
+      const apiToDetails = {};
+      wellsWithDetailsCache.forEach(detail => {
+        if (detail.api_no) {
+          apiToDetails[detail.api_no] = detail;
+        }
+      });
+
+      // Filter wells based on criteria
+      filteredWells = wellsCache.filter(well => {
+        const details = apiToDetails[well.api];
+        if (!details) return false;
+
+        let matches = true;
+
+        // County filter
+        if (countyFilter.length > 0) {
+          matches = matches && countyFilter.includes(details.county_name);
+        }
+
+        // District filter
+        if (districtFilter.length > 0) {
+          matches = matches && districtFilter.includes(details.district_code);
+        }
+
+        // Well type filter
+        if (wellTypeFilter) {
+          matches = matches && details.oil_gas_code === wellTypeFilter;
+        }
+
+        // Completion date range filter
+        if (dateStart || dateEnd) {
+          const completionDate = details.completion_date;
+          if (!completionDate) return false;
+          
+          if (dateStart && completionDate < dateStart) {
+            matches = false;
+          }
+          if (dateEnd && completionDate > dateEnd) {
+            matches = false;
+          }
+        }
+
+        // Depth range filter
+        if (minDepth !== null || maxDepth !== null) {
+          const depth = parseFloat(details.api_depth);
+          if (isNaN(depth)) return false;
+          
+          if (minDepth !== null && depth < minDepth) {
+            matches = false;
+          }
+          if (maxDepth !== null && depth > maxDepth) {
+            matches = false;
+          }
+        }
+
+        return matches;
+      });
+
+      console.log(`Filtered down to ${filteredWells.length} wells`);
+      
+      // Create a new supercluster index for filtered results
+      indexToUse = createSuperclusterIndex(filteredWells);
     }
 
     const bbox = [
@@ -119,14 +280,13 @@ app.get('/api/wells', async (req, res) => {
     const zoomLevel = Math.floor(parseFloat(zoom));
 
     // Get clusters for this viewport and zoom
-    const clusters = superclusterIndex.getClusters(bbox, zoomLevel);
+    const clusters = indexToUse.getClusters(bbox, zoomLevel);
 
     console.log(`Zoom: ${zoomLevel}, Clusters/Points returned: ${clusters.length}`);
 
     // Convert clusters back to our expected format
     const features = clusters.map(cluster => {
       if (cluster.properties.cluster) {
-        // It's a cluster
         return {
           type: 'Feature',
           properties: {
@@ -138,7 +298,6 @@ app.get('/api/wells', async (req, res) => {
           geometry: cluster.geometry
         };
       } else {
-        // It's an individual point
         return {
           type: 'Feature',
           properties: {
@@ -157,40 +316,12 @@ app.get('/api/wells', async (req, res) => {
       features,
       meta: {
         total: features.length,
+        totalFiltered: filteredWells.length,
+        totalAll: wellsCache.length,
         zoom: zoomLevel,
         clustered: true,
+        filtered: hasFilters,
         cacheLoaded: cacheLoadTime ? cacheLoadTime.toISOString() : null
-      }
-    });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// GET /api/wells/cluster/:id - Expand a cluster to see its children
-app.get('/api/wells/cluster/:id', async (req, res) => {
-  try {
-    const clusterId = parseInt(req.params.id);
-    const { zoom } = req.query;
-
-    if (!superclusterIndex) {
-      return res.status(503).json({ 
-        error: 'Wells data is still loading.',
-        loading: true 
-      });
-    }
-
-    const zoomLevel = zoom ? Math.floor(parseFloat(zoom)) : 10;
-    const children = superclusterIndex.getChildren(clusterId);
-
-    res.json({
-      type: 'FeatureCollection',
-      features: children,
-      meta: {
-        clusterId,
-        zoom: zoomLevel
       }
     });
 
@@ -205,7 +336,6 @@ app.get('/api/wells/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get basic location data
     const { data: locationData, error: locationError } = await supabase
       .from('well_locations')
       .select('*')
@@ -217,15 +347,14 @@ app.get('/api/wells/:id', async (req, res) => {
       return res.status(404).json({ error: 'Well not found' });
     }
 
-    // Get detailed well information using API number
     let detailData = null;
     let detailError = null;
 
     if (locationData.api) {
-      console.log(`Querying well_information for API: ${locationData.api}`);
+      console.log(`Querying filtered_well_information for API: ${locationData.api}`);
       
       const result = await supabase
-        .from('well_information')
+        .from('filtered_well_information')
         .select('*')
         .eq('api_no', locationData.api)
         .maybeSingle();
@@ -242,11 +371,6 @@ app.get('/api/wells/:id', async (req, res) => {
       }
     }
 
-    if (detailError) {
-      console.error('Detail query error:', detailError);
-    }
-
-    // If no detailed data found, still return location data
     if (!detailData) {
       console.log(`No detailed info found for API: ${locationData.api}`);
       return res.json({
@@ -255,7 +379,6 @@ app.get('/api/wells/:id', async (req, res) => {
       });
     }
 
-    // Combine both datasets
     res.json({
       ...locationData,
       ...detailData,
@@ -268,7 +391,7 @@ app.get('/api/wells/:id', async (req, res) => {
   }
 });
 
-// GET /api/wells/stats - Get summary statistics
+// GET /api/stats - Get summary statistics
 app.get('/api/stats', async (req, res) => {
   try {
     const total = wellsCache ? wellsCache.length : 0;
@@ -284,11 +407,13 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// POST /api/cache/reload - Reload the cache (admin endpoint)
+// POST /api/cache/reload - Reload the cache
 app.post('/api/cache/reload', async (req, res) => {
   try {
     console.log('Manual cache reload requested...');
     await loadAllWells();
+    await loadWellDetails();
+    await initializeSupercluster();
     res.json({ 
       success: true, 
       message: 'Cache reloaded successfully',
@@ -304,10 +429,11 @@ app.post('/api/cache/reload', async (req, res) => {
 // Health check
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'TOIL Backend API is running with in-memory clustering',
+    message: 'TOIL Backend API is running with in-memory clustering and filtering',
     status: 'healthy',
     cacheReady: superclusterIndex !== null,
     wellsCount: wellsCache ? wellsCache.length : 0,
+    filterOptionsReady: filterOptions !== null,
     cacheLoadTime: cacheLoadTime ? cacheLoadTime.toISOString() : 'loading...'
   });
 });
@@ -317,12 +443,13 @@ app.listen(PORT, async () => {
   console.log(`TOIL Backend server running on port ${PORT}`);
   console.log(`Supabase URL: ${supabaseUrl}`);
   
-  // Load wells on startup
   try {
     await loadAllWells();
+    await loadWellDetails();
+    await initializeSupercluster();
     console.log('Server is ready to handle requests!');
   } catch (error) {
-    console.error('Failed to load wells on startup:', error);
-    console.error('Server will respond with 503 until cache is loaded');
+    console.error('Failed to load data on startup:', error);
+    console.error('Server will respond with 503 until data is loaded');
   }
 });

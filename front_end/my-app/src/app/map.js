@@ -4,16 +4,22 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import 'leaflet/dist/leaflet.css';
-import { fetchWells } from './utils/api';
 
-export default function Map() {
+export default function Map({ filters }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersLayerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Loading wells...');
+  const [wellCount, setWellCount] = useState({ filtered: 0, total: 0 });
   const router = useRouter();
   const loadWellsTimeoutRef = useRef(null);
+  const filtersRef = useRef(filters);
+
+  // Keep filters ref updated
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   // Function to clear all markers
   const clearMarkers = () => {
@@ -27,7 +33,6 @@ export default function Map() {
   const loadWells = async () => {
     if (!mapInstanceRef.current) return;
 
-    // Clear any pending load
     if (loadWellsTimeoutRef.current) {
       clearTimeout(loadWellsTimeoutRef.current);
     }
@@ -40,15 +45,55 @@ export default function Map() {
       try {
         const bounds = mapInstanceRef.current.getBounds();
         const zoom = mapInstanceRef.current.getZoom();
-        const data = await fetchWells(bounds, zoom);
+        
+        // Build query params
+        const params = new URLSearchParams({
+          minLat: bounds.getSouth(),
+          maxLat: bounds.getNorth(),
+          minLon: bounds.getWest(),
+          maxLon: bounds.getEast(),
+          zoom: zoom
+        });
 
-        // Check if server is still loading cache
+        // Add filters using the ref to get current values
+        const currentFilters = filtersRef.current;
+        
+        if (currentFilters.counties && currentFilters.counties.length > 0) {
+          params.append('counties', currentFilters.counties.join(','));
+        }
+        if (currentFilters.districts && currentFilters.districts.length > 0) {
+          params.append('districts', currentFilters.districts.join(','));
+        }
+        if (currentFilters.wellType && currentFilters.wellType !== 'all') {
+          params.append('wellType', currentFilters.wellType);
+        }
+        if (currentFilters.completionDateStart) {
+          params.append('completionDateStart', currentFilters.completionDateStart);
+        }
+        if (currentFilters.completionDateEnd) {
+          params.append('completionDateEnd', currentFilters.completionDateEnd);
+        }
+        if (currentFilters.depthMin) {
+          params.append('depthMin', currentFilters.depthMin);
+        }
+        if (currentFilters.depthMax) {
+          params.append('depthMax', currentFilters.depthMax);
+        }
+
+        const response = await fetch(`http://localhost:3001/api/wells?${params}`);
+        const data = await response.json();
+
         if (data.loading) {
           setLoadingMessage('Server is loading well data...');
-          // Try again in 2 seconds
           setTimeout(loadWells, 2000);
           return;
         }
+
+        // Update well count
+        setWellCount({
+          filtered: data.meta.totalFiltered || data.meta.totalAll || 0,
+          total: data.meta.totalAll || 0
+        });
 
         if (!data.features || data.features.length === 0) {
           setIsLoading(false);
@@ -57,10 +102,8 @@ export default function Map() {
 
         const L = (await import('leaflet')).default;
 
-        // Create a feature group to hold all markers
         markersLayerRef.current = L.featureGroup();
 
-        // Icons
         const wellIcon = L.icon({
           iconUrl:
             'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iNiIgY3k9IjYiIHI9IjQiIGZpbGw9IiNmNTlkNTAiIHN0cm9rZT0iI2RjMjYyNiIgc3Ryb2tlLXdpZHRoPSIxLjUiLz48L3N2Zz4=',
@@ -93,15 +136,11 @@ export default function Map() {
           });
         };
 
-        // Add markers or clusters
         data.features.forEach(feature => {
           const [lon, lat] = feature.geometry.coordinates;
 
           if (feature.properties.cluster) {
-            // It's a cluster
             const count = feature.properties.point_count;
-            const clusterId = feature.properties.cluster_id;
-
             const marker = L.marker([lat, lon], { 
               icon: clusterIcon(count) 
             });
@@ -119,14 +158,12 @@ export default function Map() {
             marker.bindPopup(popupContent);
 
             marker.on('click', function () {
-              // Zoom in to cluster
               mapInstanceRef.current.setView([lat, lon], mapInstanceRef.current.getZoom() + 2);
             });
 
             markersLayerRef.current.addLayer(marker);
 
           } else {
-            // It's an individual well
             const well = feature.properties;
 
             const popupContent = `
@@ -158,7 +195,6 @@ export default function Map() {
           }
         });
 
-        // Add all markers to map
         mapInstanceRef.current.addLayer(markersLayerRef.current);
 
         console.log(`Displayed ${data.features.length} items (clusters + wells)`);
@@ -175,6 +211,13 @@ export default function Map() {
       }
     }, 300);
   };
+
+  // Load wells when filters change
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      loadWells();
+    }
+  }, [filters]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && mapRef.current && !mapInstanceRef.current) {
@@ -204,6 +247,8 @@ export default function Map() {
             mapInstanceRef.current.setMaxBounds(bounds.pad(0.1));
 
             loadWells();
+            
+            // Attach event listeners
             mapInstanceRef.current.on('zoomend', loadWells);
             mapInstanceRef.current.on('moveend', loadWells);
           })
@@ -224,6 +269,11 @@ export default function Map() {
     };
   }, []);
 
+  const hasFilters = filters.counties?.length > 0 || filters.districts?.length > 0 || 
+                     (filters.wellType && filters.wellType !== 'all') ||
+                     filters.completionDateStart || filters.completionDateEnd ||
+                     filters.depthMin || filters.depthMax;
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mapRef} className={styles.mapContainer}></div>
@@ -241,6 +291,23 @@ export default function Map() {
           fontSize: '14px'
         }}>
           {loadingMessage}
+        </div>
+      )}
+      {!isLoading && hasFilters && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: '#1f2937',
+          color: '#e5e7eb',
+          padding: '8px 12px',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+          fontSize: '14px',
+          border: '1px solid #374151'
+        }}>
+          Showing {wellCount.filtered.toLocaleString()} of {wellCount.total.toLocaleString()} wells
         </div>
       )}
     </div>

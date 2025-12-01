@@ -111,13 +111,107 @@
 .label {
   display: block;
   font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
   color: #d1d5db;
 }
 
-.input,
-.select {
+.dropdownToggle {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 0.5rem;
+}
+
+.dropdownToggle:hover {
+  background-color: #374151;
+  border-color: #60a5fa;
+}
+
+.dropdownLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #d1d5db;
+  text-align: left;
+}
+
+.dropdownChevron {
+  width: 1rem;
+  height: 1rem;
+  color: #9ca3af;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.loadingText {
+  text-align: center;
+  padding: 1rem;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.checkboxScrollContainer {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background-color: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checkboxScrollContainer::-webkit-scrollbar {
+  width: 8px;
+}
+
+.checkboxScrollContainer::-webkit-scrollbar-track {
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+.checkboxScrollContainer::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+.checkboxScrollContainer::-webkit-scrollbar-thumb:hover {
+  background: #60a5fa;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  color: #d1d5db;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s;
+}
+
+.checkbox:hover {
+  background-color: #374151;
+}
+
+.checkbox input[type="checkbox"] {
+  cursor: pointer;
+  width: 1.125rem;
+  height: 1.125rem;
+  accent-color: #992626;
+  flex-shrink: 0;
+}
+
+.input {
   width: 100%;
   padding: 0.625rem 0.75rem;
   background-color: #2d3748;
@@ -129,14 +223,13 @@
   transition: border-color 0.2s, background-color 0.2s;
 }
 
-.input:focus,
-.select:focus {
+.input:focus {
   border-color: #60a5fa;
   background-color: #374151;
 }
 
-.select {
-  cursor: pointer;
+.input::placeholder {
+  color: #6b7280;
 }
 
 .rangeInputs,
@@ -176,31 +269,8 @@
   cursor: pointer;
   width: 1rem;
   height: 1rem;
-  accent-color: #60a5fa;
+  accent-color: #992626;
 }
-
-.checkboxGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.875rem;
-  color: #d1d5db;
-  cursor: pointer;
-}
-
-.checkbox input[type="checkbox"] {
-  cursor: pointer;
-  width: 1.125rem;
-  height: 1.125rem;
-  accent-color: #60a5fa;
-}
-
 
 .actions {
   display: flex;
@@ -226,7 +296,7 @@
 }
 
 .applyButton:hover {
-  background-color: #992626;
+  background-color: #7f1d1d;
 }
 
 .applyButton:active {
