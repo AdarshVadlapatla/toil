@@ -6,7 +6,8 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between; 
+  justify-content: flex-end; 
+  gap: 1rem; 
   padding: 1rem 2rem;
   background-color: #2d3748;
   color: white;
@@ -30,6 +31,7 @@
 }
 
 .logo {
+  margin-right: auto;
   display: flex;
   align-items: center;
   gap: 0.75rem;
