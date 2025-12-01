@@ -76,7 +76,7 @@ async function loadWellDetails() {
 
     const { data: batch, error } = await supabase
       .from('filtered_well_information')
-      .select('api_no, county_name, district_code, oil_gas_code, completion_date, api_depth')
+      .select('api_no, county_name, district_code, oil_gas_code, completion_date, api_depth, lease_name, operator_name, field_name')
       .range(start, end);
 
     if (error) {
@@ -387,6 +387,79 @@ app.get('/api/wells/:id', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching well:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/search - Search wells with autocomplete
+app.get('/api/search', async (req, res) => {
+  try {
+    const { query } = req.query;
+
+    if (!query || query.trim().length < 2) {
+      return res.json({ results: [] });
+    }
+
+    // Check if cache is loaded
+    if (!wellsCache || !wellsWithDetailsCache) {
+      return res.status(503).json({ 
+        error: 'Wells data is still loading. Please try again in a moment.',
+        loading: true 
+      });
+    }
+
+    const searchTerm = query.toLowerCase().trim();
+    
+    // Create a map of API to well details for fast lookup
+    const apiToDetails = {};
+    wellsWithDetailsCache.forEach(detail => {
+      if (detail.api_no) {
+        apiToDetails[detail.api_no] = detail;
+      }
+    });
+
+    // Search through wells and collect matches
+    const matches = [];
+    const maxResults = 10;
+
+    for (const well of wellsCache) {
+      if (matches.length >= maxResults) break;
+
+      const details = apiToDetails[well.api];
+      if (!details) continue;
+
+      // Search across multiple fields
+      const apiMatch = well.api?.toLowerCase().includes(searchTerm);
+      const wellIdMatch = well.wellid?.toLowerCase().includes(searchTerm);
+      const leaseMatch = details.lease_name?.toLowerCase().includes(searchTerm);
+      const operatorMatch = details.operator_name?.toLowerCase().includes(searchTerm);
+      const fieldMatch = details.field_name?.toLowerCase().includes(searchTerm);
+      const countyMatch = details.county_name?.toLowerCase().includes(searchTerm);
+
+      if (apiMatch || wellIdMatch || leaseMatch || operatorMatch || fieldMatch || countyMatch) {
+        matches.push({
+          id: well.surface_id,
+          api: well.api,
+          wellid: well.wellid,
+          leaseName: details.lease_name || 'Unknown Lease',
+          operatorName: details.operator_name || 'Unknown Operator',
+          fieldName: details.field_name || 'Unknown Field',
+          countyName: details.county_name || 'Unknown County',
+          lat: well.lat83,
+          lon: well.long83,
+          matchType: apiMatch ? 'API' : 
+                     wellIdMatch ? 'Well ID' : 
+                     leaseMatch ? 'Lease' : 
+                     operatorMatch ? 'Operator' :
+                     fieldMatch ? 'Field' : 'County'
+        });
+      }
+    }
+
+    res.json({ results: matches });
+
+  } catch (error) {
+    console.error('Error searching wells:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -130,13 +130,13 @@ export default function WellDetailPage() {
             className={`${styles.tab} ${activeTab === 'details' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('details')}
           >
-            Production & Details
+            Well Details
           </button>
           <button 
             className={`${styles.tab} ${activeTab === 'production' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('production')}
           >
-            AI Predictions
+            Production Data & Predictions
           </button>
         </div>
 

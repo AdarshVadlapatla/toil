@@ -104,18 +104,6 @@ export default function Filters({ onApplyFilters }) {
 
   return (
     <div className={styles.filtersContainer}>
-      <div className={styles.searchBox}>
-        <svg className={styles.searchIcon} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <circle cx="11" cy="11" r="8" strokeWidth="2"/>
-          <path d="M21 21l-4.35-4.35" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-        <input
-          type="text"
-          placeholder="Search by API #, Lease Name, Operator..."
-          className={styles.searchInput}
-        />
-      </div>
-
       {/* Location Filters */}
       <section className={styles.section}>
         <button 

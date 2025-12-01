@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import 'leaflet/dist/leaflet.css';
 
-export default function Map({ filters }) {
+const Map = forwardRef(({ filters }, ref) => {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersLayerRef = useRef(null);
+  const highlightMarkerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Loading wells...');
   const [wellCount, setWellCount] = useState({ filtered: 0, total: 0 });
@@ -20,6 +21,75 @@ export default function Map({ filters }) {
   useEffect(() => {
     filtersRef.current = filters;
   }, [filters]);
+
+  // Expose zoomToWell method to parent component
+  useImperativeHandle(ref, () => ({
+    zoomToWell: async (well) => {
+      if (!mapInstanceRef.current) return;
+
+      const L = (await import('leaflet')).default;
+
+      // Remove previous highlight if exists
+      if (highlightMarkerRef.current) {
+        mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
+        highlightMarkerRef.current = null;
+      }
+
+      // Create highlight icon (larger, different color)
+      const highlightIcon = L.icon({
+        iconUrl:
+          'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIGZpbGw9IiNmNTlkNTAiIHN0cm9rZT0iIzYwYTVmYSIgc3Ryb2tlLXdpZHRoPSIzIi8+PC9zdmc+',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      // Create highlight marker
+      const popupContent = `
+        <div class="${styles.popupContent}">
+          <strong class="${styles.popupTitle}">Well: ${well.wellid || 'N/A'}</strong>
+          <div class="${styles.popupApi}">API: ${well.api || 'N/A'}</div>
+          <div class="${styles.popupApi}">Lease: ${well.leaseName || 'N/A'}</div>
+          <button class="${styles.popupButton} view-details-btn" data-id="${well.id}">
+            View Details
+          </button>
+        </div>
+      `;
+
+      highlightMarkerRef.current = L.marker([well.lat, well.lon], { 
+        icon: highlightIcon,
+        zIndexOffset: 1000 // Make sure it appears on top
+      })
+        .bindPopup(popupContent)
+        .addTo(mapInstanceRef.current);
+
+      // Zoom to the well
+      mapInstanceRef.current.setView([well.lat, well.lon], 14, {
+        animate: true,
+        duration: 1
+      });
+
+      // Open the popup
+      setTimeout(() => {
+        highlightMarkerRef.current.openPopup();
+        
+        // Add click handler to the button after popup is opened
+        const button = document.querySelector('.view-details-btn');
+        if (button) {
+          button.addEventListener('click', () => {
+            window.open(`/wells/${well.id}`, '_blank');
+          });
+        }
+      }, 500);
+
+      // Remove highlight after 10 seconds (optional)
+      setTimeout(() => {
+        if (highlightMarkerRef.current) {
+          mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
+          highlightMarkerRef.current = null;
+        }
+      }, 10000);
+    }
+  }));
 
   // Function to clear all markers
   const clearMarkers = () => {
@@ -187,8 +257,20 @@ export default function Map({ filters }) {
               this.closePopup();
             });
 
+            // Add click handler to marker that opens details page
             marker.on('click', function () {
               window.open(`/wells/${well.id}`, '_blank');
+            });
+
+            // Add event listener when popup opens to handle button click
+            marker.on('popupopen', function () {
+              const button = document.querySelector('.view-details-btn');
+              if (button) {
+                button.addEventListener('click', (e) => {
+                  e.stopPropagation(); // Prevent marker click event
+                  window.open(`/wells/${well.id}`, '_blank');
+                });
+              }
             });
 
             markersLayerRef.current.addLayer(marker);
@@ -263,6 +345,9 @@ export default function Map({ filters }) {
         mapInstanceRef.current.off('zoomend', loadWells);
         mapInstanceRef.current.off('moveend', loadWells);
         clearMarkers();
+        if (highlightMarkerRef.current) {
+          mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
+        }
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
@@ -312,4 +397,8 @@ export default function Map({ filters }) {
       )}
     </div>
   );
-}
+});
+
+Map.displayName = 'Map';
+
+export default Map;
