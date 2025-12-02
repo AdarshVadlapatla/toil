@@ -177,13 +177,14 @@ class GasProductionUploader:
         
         Based on COBOL layout from manual:
         - Position 1: Record type (5)
-        - Position 3-10: WELL-ID (6 digits)
-        - Position 11-16: OPER-ID (6 digits)
-        - Position 17-24: W-PERM-FLD-ID (8 digits)
-        - Position 25: W-DIST-NO (2 digits)
-        - Position 26: W-DIST-SFX (1 character)
-        - Position 27-32: WELL-NO (tract + number + suffix)
-        - Position 28-30: WELL-NR (3 digits, part of WELL-NO)
+        - Position 2-3: W-DIST-NO (2 digits)
+        - Position 4: W-DIST-SFX (1 character)
+        - Position 5-12: W-PERM-FLD-ID (8 digits)
+        - Position 13-18: OPER-ID (6 digits)
+        - Position 19-24: WELL-ID (6 digits)
+        - Position 26-31: WELL-NO (6 characters: tract + number + suffix)
+        - Position 32-63: LSE-NAME (32 bytes)
+        - Position 64-66: CO-CODE (3 digits)
         - Position 317+: Monthly data (14 months worth)
         
         Each monthly record contains:
@@ -200,37 +201,44 @@ class GasProductionUploader:
         results = []
         
         try:
-            # Extract WELL-ID (positions 3-8, 0-indexed = 2-7)
-            well_id_bytes = record_data[2:8]
-            well_id = self.decode_ebcdic_string(well_id_bytes)
-            
-            # Extract OPER-ID (positions 9-14, 0-indexed = 8-13)
-            oper_id_bytes = record_data[8:14]
-            oper_id = self.decode_ebcdic_string(oper_id_bytes)
-            
-            # Extract W-PERM-FLD-ID (positions 15-22, 0-indexed = 14-21)
-            w_perm_fld_id_bytes = record_data[14:22]
-            w_perm_fld_id = self.decode_ebcdic_string(w_perm_fld_id_bytes)
-            
-            # Extract W-DIST-NO (positions 23-24, 0-indexed = 22-23)
-            w_dist_no_bytes = record_data[22:24]
+            # Extract W-DIST-NO (positions 2-3, 0-indexed = 1-2)
+            w_dist_no_bytes = record_data[1:3]
             w_dist_no = self.decode_ebcdic_string(w_dist_no_bytes)
             
-            # Extract W-DIST-SFX (position 25, 0-indexed = 24)
-            w_dist_sfx_bytes = record_data[24:25]
+            # Extract W-DIST-SFX (position 4, 0-indexed = 3)
+            w_dist_sfx_bytes = record_data[3:4]
             w_dist_sfx = self.decode_ebcdic_string(w_dist_sfx_bytes)
             
-            # Extract well number (positions 26-31, 0-indexed = 25-30)
-            # WELL-NO structure: TRACT-NO (1) + WELL-NR (3) + WELL-SFX (2)
+            # Combine district (e.g., "01", "06E")
+            district = w_dist_no + w_dist_sfx if w_dist_no else ''
+            district = district.strip()
+            
+            # Extract W-PERM-FLD-ID (positions 5-12, 0-indexed = 4-11)
+            field_id_bytes = record_data[4:12]
+            field_id = self.decode_ebcdic_string(field_id_bytes)
+            
+            # Extract OPER-ID (positions 13-18, 0-indexed = 12-17)
+            oper_id_bytes = record_data[12:18]
+            oper_id = self.decode_ebcdic_string(oper_id_bytes)
+            
+            # Extract WELL-ID (positions 19-24, 0-indexed = 18-23)
+            well_id_bytes = record_data[18:24]
+            well_id = self.decode_ebcdic_string(well_id_bytes)
+            
+            # Extract WELL-NO (positions 26-31, 0-indexed = 25-30)
             well_no_bytes = record_data[25:31]
             well_no = self.decode_ebcdic_string(well_no_bytes)
             
-            # Extract WELL-NR (positions 27-29, 0-indexed = 26-28)
-            well_nr_bytes = record_data[26:29]
-            well_nr = self.decode_ebcdic_string(well_nr_bytes)
-            
             if not well_no:
                 return results
+            
+            # Extract LSE-NAME (positions 32-63, 0-indexed = 31-62)
+            lse_name_bytes = record_data[31:63]
+            lse_name = self.decode_ebcdic_string(lse_name_bytes)
+            
+            # Extract CO-CODE (positions 64-66, 0-indexed = 63-65)
+            co_code_bytes = record_data[63:66]
+            co_code = self.decode_ebcdic_string(co_code_bytes)
             
             # Monthly data starts at position 317 (0-indexed = 316)
             # Each monthly record is 116 bytes according to COBOL layout
@@ -268,13 +276,13 @@ class GasProductionUploader:
                 # Only include records with valid data
                 if year_month and (gas_prd is not None or w_type_mo):
                     results.append({
-                        'well_id': well_id,
+                        'district': district,
+                        'field_id': field_id,
                         'oper_id': oper_id,
-                        'field_id': w_perm_fld_id,
-                        'w_dist_no': w_dist_no,
-                        'w_dist_sfx': w_dist_sfx,
+                        'well_id': well_id,
                         'well_no': well_no,
-                        'well_nr': well_nr,
+                        'lease_name': lse_name,
+                        'county_code': co_code,
                         'year_month': year_month,
                         'gas_production': gas_prd if gas_prd is not None else 0,
                         'well_type_month': w_type_mo if w_type_mo else ''
@@ -381,24 +389,25 @@ class GasProductionUploader:
                     create_sql = text(f"""
                         CREATE TABLE {table_name} (
                             id SERIAL PRIMARY KEY,
-                            well_id VARCHAR(10),
-                            oper_id VARCHAR(10),
+                            district VARCHAR(5),
                             field_id VARCHAR(10),
-                            w_dist_no VARCHAR(2),
-                            w_dist_sfx VARCHAR(1),
+                            oper_id VARCHAR(10),
+                            well_id VARCHAR(10),
                             well_no VARCHAR(10) NOT NULL,
-                            well_nr VARCHAR(5),
+                            lease_name VARCHAR(32),
+                            county_code VARCHAR(5),
                             year_month DATE NOT NULL,
                             gas_production BIGINT,
                             well_type_month VARCHAR(5),
                             created_at TIMESTAMP DEFAULT NOW()
                         );
                         
-                        CREATE INDEX IF NOT EXISTS idx_{table_name}_well_id ON {table_name}(well_id);
-                        CREATE INDEX IF NOT EXISTS idx_{table_name}_oper_id ON {table_name}(oper_id);
+                        CREATE INDEX IF NOT EXISTS idx_{table_name}_district ON {table_name}(district);
                         CREATE INDEX IF NOT EXISTS idx_{table_name}_field_id ON {table_name}(field_id);
-                        CREATE INDEX IF NOT EXISTS idx_{table_name}_w_dist_no ON {table_name}(w_dist_no);
+                        CREATE INDEX IF NOT EXISTS idx_{table_name}_oper_id ON {table_name}(oper_id);
+                        CREATE INDEX IF NOT EXISTS idx_{table_name}_well_id ON {table_name}(well_id);
                         CREATE INDEX IF NOT EXISTS idx_{table_name}_well_no ON {table_name}(well_no);
+                        CREATE INDEX IF NOT EXISTS idx_{table_name}_county_code ON {table_name}(county_code);
                         CREATE INDEX IF NOT EXISTS idx_{table_name}_year_month ON {table_name}(year_month);
                     """)
                     conn.execute(create_sql)
@@ -415,13 +424,13 @@ class GasProductionUploader:
                     table_name,
                     metadata,
                     Column('id', Integer, primary_key=True, autoincrement=True),
-                    Column('well_id', String(10), index=True),
-                    Column('oper_id', String(10), index=True),
+                    Column('district', String(5), index=True),
                     Column('field_id', String(10), index=True),
-                    Column('w_dist_no', String(2), index=True),
-                    Column('w_dist_sfx', String(1)),
+                    Column('oper_id', String(10), index=True),
+                    Column('well_id', String(10), index=True),
                     Column('well_no', String(10), nullable=False, index=True),
-                    Column('well_nr', String(5)),
+                    Column('lease_name', String(32)),
+                    Column('county_code', String(5), index=True),
                     Column('year_month', Date, nullable=False, index=True),
                     Column('gas_production', BigInteger),
                     Column('well_type_month', String(5)),
@@ -434,7 +443,7 @@ class GasProductionUploader:
                 logger.error(f"Fallback also failed: {e2}")
                 raise
     
-    def upload_to_database(self, records, table_name, batch_size=5000, skip_records=0):
+    def upload_to_database(self, records, table_name, batch_size=1000, skip_records=0):
         """
         Upload parsed records to Supabase
         
@@ -475,9 +484,9 @@ class GasProductionUploader:
                     # Insert records
                     insert_sql = text(f"""
                         INSERT INTO {table_name} 
-                        (well_id, oper_id, field_id, w_dist_no, w_dist_sfx, well_no, well_nr, year_month, gas_production, well_type_month)
+                        (district, field_id, oper_id, well_id, well_no, lease_name, county_code, year_month, gas_production, well_type_month)
                         VALUES 
-                        (:well_id, :oper_id, :field_id, :w_dist_no, :w_dist_sfx, :well_no, :well_nr, :year_month, :gas_production, :well_type_month)
+                        (:district, :field_id, :oper_id, :well_id, :well_no, :lease_name, :county_code, :year_month, :gas_production, :well_type_month)
                     """)
                     
                     conn.execute(insert_sql, batch)
