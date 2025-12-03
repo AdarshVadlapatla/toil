@@ -1,0 +1,214 @@
+.searchContainer {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.searchBox {
+  position: relative;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #6b7280;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 0.75rem 3rem 0.75rem 3rem;
+  background-color: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  outline: none;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.searchInput::placeholder {
+  color: #9ca3af;
+}
+
+.searchInput:focus {
+  border-color: #60a5fa;
+  background-color: #374151;
+}
+
+.clearButton {
+  position: absolute;
+  right: 3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.5rem;
+  height: 1.5rem;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  z-index: 1;
+}
+
+.clearButton:hover {
+  color: #e5e7eb;
+}
+
+.clearButton svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.spinner {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1.25rem;
+  height: 1.25rem;
+  z-index: 1;
+}
+
+.spinnerIcon {
+  width: 100%;
+  height: 100%;
+  color: #60a5fa;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.resultsDropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background-color: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 0.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.resultsDropdown::-webkit-scrollbar {
+  width: 8px;
+}
+
+.resultsDropdown::-webkit-scrollbar-track {
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+.resultsDropdown::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+.resultsDropdown::-webkit-scrollbar-thumb:hover {
+  background: #60a5fa;
+}
+
+.resultItem {
+  width: 100%;
+  padding: 1rem;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #374151;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.resultItem:last-child {
+  border-bottom: none;
+}
+
+.resultItem:hover {
+  background-color: #374151;
+}
+
+.resultMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.resultApi {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #60a5fa;
+}
+
+.resultLease {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.resultDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resultOperator {
+  font-size: 0.8rem;
+  color: #d1d5db;
+}
+
+.resultLocation {
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+.matchBadge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  background-color: #992626;
+  color: #e5e7eb;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+}
+
+.noResults {
+  padding: 2rem;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}

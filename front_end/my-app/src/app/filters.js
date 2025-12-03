@@ -1,33 +1,59 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import styles from './filters.module.css';
 
-export default function Filters() {
+export default function Filters({ onApplyFilters }) {
   const [filters, setFilters] = useState({
-    county: '',
-    fieldClassification: '',
-    region: '',
+    counties: [],
+    districts: [],
     wellType: 'all',
-    wellDepth: { min: '', max: '' },
-    formation: '',
-    dateRange: { start: '', end: '' },
-    wellStatus: 'all',
-    productionRange: { min: '', max: '' },
-    performanceTier: [],
-    productionThreshold: '',
-    operatorName: '',
-    organization: '',
+    completionDateStart: '',
+    completionDateEnd: '',
+    depthMin: '',
+    depthMax: '',
   });
 
-  const handleInputChange = (field, value) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
-  };
+  const [options, setOptions] = useState({
+    counties: [],
+    districts: [],
+  });
 
-  const handleNestedChange = (parent, field, value) => {
-    setFilters(prev => ({
+  const [loading, setLoading] = useState(true);
+
+  const [expandedSections, setExpandedSections] = useState({
+    location: true,
+    attributes: false,
+    counties: false,
+    districts: false,
+  });
+
+  // Fetch filter options from server
+  useEffect(() => {
+    const fetchOptions = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('http://localhost:3001/api/filter-options');
+        const data = await response.json();
+        
+        setOptions({
+          counties: data.counties || [],
+          districts: data.districts || [],
+        });
+      } catch (error) {
+        console.error('Error fetching filter options:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOptions();
+  }, []);
+
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
       ...prev,
-      [parent]: { ...prev[parent], [field]: value }
+      [section]: !prev[section]
     }));
   };
 
@@ -40,313 +66,243 @@ export default function Filters() {
     }));
   };
 
+  const handleInputChange = (field, value) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+  };
+
   const handleReset = () => {
     setFilters({
-      county: '',
-      fieldClassification: '',
-      region: '',
+      counties: [],
+      districts: [],
       wellType: 'all',
-      wellDepth: { min: '', max: '' },
-      formation: '',
-      dateRange: { start: '', end: '' },
-      wellStatus: 'all',
-      productionRange: { min: '', max: '' },
-      performanceTier: [],
-      productionThreshold: '',
-      operatorName: '',
-      organization: '',
+      completionDateStart: '',
+      completionDateEnd: '',
+      depthMin: '',
+      depthMax: '',
     });
+    
+    // Clear filters on map
+    if (onApplyFilters) {
+      onApplyFilters({
+        counties: [],
+        districts: [],
+        wellType: 'all',
+        completionDateStart: '',
+        completionDateEnd: '',
+        depthMin: '',
+        depthMax: '',
+      });
+    }
   };
 
   const handleApply = () => {
     console.log('Applying filters:', filters);
-    // Filter logic will go here
+    if (onApplyFilters) {
+      onApplyFilters(filters);
+    }
   };
 
   return (
     <div className={styles.filtersContainer}>
-      <div className={styles.searchBox}>
-        <input
-          type="text"
-          placeholder="Search by API #, Lease Name, Operator..."
-          className={styles.searchInput}
-        />
-      </div>
-
       {/* Location Filters */}
       <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>Location Filters</h3>
+        <button 
+          className={styles.sectionHeader}
+          onClick={() => toggleSection('location')}
+        >
+          <h3 className={styles.sectionTitle}>Location Filters</h3>
+          <svg 
+            className={`${styles.chevron} ${expandedSections.location ? styles.chevronUp : ''}`}
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor"
+          >
+            <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
         
-        <div className={styles.field}>
-          <label className={styles.label}>County</label>
-          <select
-            className={styles.select}
-            value={filters.county}
-            onChange={(e) => handleInputChange('county', e.target.value)}
-          >
-            <option value="">All Counties</option>
-            <option value="andrews">Andrews</option>
-            <option value="martin">Martin</option>
-            <option value="midland">Midland</option>
-            <option value="reagan">Reagan</option>
-            <option value="upton">Upton</option>
-          </select>
-        </div>
+        {expandedSections.location && (
+          <div className={styles.sectionContent}>
+            {loading ? (
+              <div className={styles.loadingText}>Loading options...</div>
+            ) : (
+              <>
+                {/* County Filter */}
+                <div className={styles.field}>
+                  <button 
+                    className={styles.dropdownToggle}
+                    onClick={() => setExpandedSections(prev => ({...prev, counties: !prev.counties}))}
+                    type="button"
+                  >
+                    <span className={styles.dropdownLabel}>
+                      County ({filters.counties.length} selected)
+                    </span>
+                    <svg 
+                      className={`${styles.dropdownChevron} ${expandedSections.counties ? styles.chevronUp : ''}`}
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="currentColor"
+                    >
+                      <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                  {expandedSections.counties && (
+                    <div className={styles.checkboxScrollContainer}>
+                      {options.counties.map(county => (
+                        <label key={county} className={styles.checkbox}>
+                          <input
+                            type="checkbox"
+                            checked={filters.counties.includes(county)}
+                            onChange={() => handleCheckboxChange('counties', county)}
+                          />
+                          {county}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Field Classification</label>
-          <select
-            className={styles.select}
-            value={filters.fieldClassification}
-            onChange={(e) => handleInputChange('fieldClassification', e.target.value)}
-          >
-            <option value="">All Fields</option>
-            <option value="permian">Permian Basin</option>
-            <option value="eagle-ford">Eagle Ford</option>
-            <option value="haynesville">Haynesville</option>
-            <option value="barnett">Barnett</option>
-          </select>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Geographic Region</label>
-          <select
-            className={styles.select}
-            value={filters.region}
-            onChange={(e) => handleInputChange('region', e.target.value)}
-          >
-            <option value="">All Regions</option>
-            <option value="west-texas">West Texas</option>
-            <option value="south-texas">South Texas</option>
-            <option value="north-texas">North Texas</option>
-            <option value="east-texas">East Texas</option>
-          </select>
-        </div>
+                {/* District Filter */}
+                <div className={styles.field}>
+                  <button 
+                    className={styles.dropdownToggle}
+                    onClick={() => setExpandedSections(prev => ({...prev, districts: !prev.districts}))}
+                    type="button"
+                  >
+                    <span className={styles.dropdownLabel}>
+                      District ({filters.districts.length} selected)
+                    </span>
+                    <svg 
+                      className={`${styles.dropdownChevron} ${expandedSections.districts ? styles.chevronUp : ''}`}
+                      viewBox="0 0 24 24" 
+                      fill="none" 
+                      stroke="currentColor"
+                    >
+                      <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </button>
+                  {expandedSections.districts && (
+                    <div className={styles.checkboxScrollContainer}>
+                      {options.districts.map(district => (
+                        <label key={district} className={styles.checkbox}>
+                          <input
+                            type="checkbox"
+                            checked={filters.districts.includes(district)}
+                            onChange={() => handleCheckboxChange('districts', district)}
+                          />
+                          District {district}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </section>
 
       {/* Well Attributes */}
       <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>Well Attributes</h3>
+        <button 
+          className={styles.sectionHeader}
+          onClick={() => toggleSection('attributes')}
+        >
+          <h3 className={styles.sectionTitle}>Well Attributes</h3>
+          <svg 
+            className={`${styles.chevron} ${expandedSections.attributes ? styles.chevronUp : ''}`}
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor"
+          >
+            <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
         
-        <div className={styles.field}>
-          <label className={styles.label}>Well Type</label>
-          <div className={styles.radioGroup}>
-            <label className={styles.radio}>
-              <input
-                type="radio"
-                name="wellType"
-                value="all"
-                checked={filters.wellType === 'all'}
-                onChange={(e) => handleInputChange('wellType', e.target.value)}
-              />
-              All
-            </label>
-            <label className={styles.radio}>
-              <input
-                type="radio"
-                name="wellType"
-                value="oil"
-                checked={filters.wellType === 'oil'}
-                onChange={(e) => handleInputChange('wellType', e.target.value)}
-              />
-              Oil
-            </label>
-            <label className={styles.radio}>
-              <input
-                type="radio"
-                name="wellType"
-                value="gas"
-                checked={filters.wellType === 'gas'}
-                onChange={(e) => handleInputChange('wellType', e.target.value)}
-              />
-              Gas
-            </label>
+        {expandedSections.attributes && (
+          <div className={styles.sectionContent}>
+            {/* Well Type Filter */}
+            <div className={styles.field}>
+              <label className={styles.label}>Well Type</label>
+              <div className={styles.radioGroup}>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="wellType"
+                    value="all"
+                    checked={filters.wellType === 'all'}
+                    onChange={(e) => handleInputChange('wellType', e.target.value)}
+                  />
+                  All
+                </label>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="wellType"
+                    value="O"
+                    checked={filters.wellType === 'O'}
+                    onChange={(e) => handleInputChange('wellType', e.target.value)}
+                  />
+                  Oil
+                </label>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="wellType"
+                    value="G"
+                    checked={filters.wellType === 'G'}
+                    onChange={(e) => handleInputChange('wellType', e.target.value)}
+                  />
+                  Gas
+                </label>
+              </div>
+            </div>
+
+            {/* Completion Date Range */}
+            <div className={styles.field}>
+              <label className={styles.label}>Completion Date Range</label>
+              <div className={styles.dateInputs}>
+                <input
+                  type="date"
+                  className={styles.input}
+                  value={filters.completionDateStart}
+                  onChange={(e) => handleInputChange('completionDateStart', e.target.value)}
+                  placeholder="Start Date"
+                />
+                <span className={styles.rangeSeparator}>to</span>
+                <input
+                  type="date"
+                  className={styles.input}
+                  value={filters.completionDateEnd}
+                  onChange={(e) => handleInputChange('completionDateEnd', e.target.value)}
+                  placeholder="End Date"
+                />
+              </div>
+            </div>
+
+            {/* Well Depth Range */}
+            <div className={styles.field}>
+              <label className={styles.label}>Well Depth (ft)</label>
+              <div className={styles.rangeInputs}>
+                <input
+                  type="number"
+                  placeholder="Min"
+                  className={styles.input}
+                  value={filters.depthMin}
+                  onChange={(e) => handleInputChange('depthMin', e.target.value)}
+                />
+                <span className={styles.rangeSeparator}>to</span>
+                <input
+                  type="number"
+                  placeholder="Max"
+                  className={styles.input}
+                  value={filters.depthMax}
+                  onChange={(e) => handleInputChange('depthMax', e.target.value)}
+                />
+              </div>
+            </div>
           </div>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Well Depth (ft)</label>
-          <div className={styles.rangeInputs}>
-            <input
-              type="number"
-              placeholder="Min"
-              className={styles.input}
-              value={filters.wellDepth.min}
-              onChange={(e) => handleNestedChange('wellDepth', 'min', e.target.value)}
-            />
-            <span className={styles.rangeSeparator}>to</span>
-            <input
-              type="number"
-              placeholder="Max"
-              className={styles.input}
-              value={filters.wellDepth.max}
-              onChange={(e) => handleNestedChange('wellDepth', 'max', e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Formation</label>
-          <select
-            className={styles.select}
-            value={filters.formation}
-            onChange={(e) => handleInputChange('formation', e.target.value)}
-          >
-            <option value="">All Formations</option>
-            <option value="wolfcamp">Wolfcamp</option>
-            <option value="bone-spring">Bone Spring</option>
-            <option value="spraberry">Spraberry</option>
-            <option value="delaware">Delaware</option>
-          </select>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Completion Date Range</label>
-          <div className={styles.dateInputs}>
-            <input
-              type="date"
-              className={styles.input}
-              value={filters.dateRange.start}
-              onChange={(e) => handleNestedChange('dateRange', 'start', e.target.value)}
-            />
-            <span className={styles.rangeSeparator}>to</span>
-            <input
-              type="date"
-              className={styles.input}
-              value={filters.dateRange.end}
-              onChange={(e) => handleNestedChange('dateRange', 'end', e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Well Status</label>
-          <div className={styles.radioGroup}>
-            <label className={styles.radio}>
-              <input
-                type="radio"
-                name="wellStatus"
-                value="all"
-                checked={filters.wellStatus === 'all'}
-                onChange={(e) => handleInputChange('wellStatus', e.target.value)}
-              />
-              All
-            </label>
-            <label className={styles.radio}>
-              <input
-                type="radio"
-                name="wellStatus"
-                value="active"
-                checked={filters.wellStatus === 'active'}
-                onChange={(e) => handleInputChange('wellStatus', e.target.value)}
-              />
-              Active
-            </label>
-            <label className={styles.radio}>
-              <input
-                type="radio"
-                name="wellStatus"
-                value="inactive"
-                checked={filters.wellStatus === 'inactive'}
-                onChange={(e) => handleInputChange('wellStatus', e.target.value)}
-              />
-              Inactive
-            </label>
-          </div>
-        </div>
-      </section>
-
-      {/* Production Metrics */}
-      <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>Production Metrics</h3>
-        
-        <div className={styles.field}>
-          <label className={styles.label}>Production Level (BBL/month)</label>
-          <div className={styles.rangeInputs}>
-            <input
-              type="number"
-              placeholder="Min"
-              className={styles.input}
-              value={filters.productionRange.min}
-              onChange={(e) => handleNestedChange('productionRange', 'min', e.target.value)}
-            />
-            <span className={styles.rangeSeparator}>to</span>
-            <input
-              type="number"
-              placeholder="Max"
-              className={styles.input}
-              value={filters.productionRange.max}
-              onChange={(e) => handleNestedChange('productionRange', 'max', e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Performance Tier</label>
-          <div className={styles.checkboxGroup}>
-            <label className={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={filters.performanceTier.includes('high')}
-                onChange={() => handleCheckboxChange('performanceTier', 'high')}
-              />
-              High Performers
-            </label>
-            <label className={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={filters.performanceTier.includes('medium')}
-                onChange={() => handleCheckboxChange('performanceTier', 'medium')}
-              />
-              Medium Performers
-            </label>
-            <label className={styles.checkbox}>
-              <input
-                type="checkbox"
-                checked={filters.performanceTier.includes('low')}
-                onChange={() => handleCheckboxChange('performanceTier', 'low')}
-              />
-              Low Performers
-            </label>
-          </div>
-        </div>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Historical Production Threshold</label>
-          <select
-            className={styles.select}
-            value={filters.productionThreshold}
-            onChange={(e) => handleInputChange('productionThreshold', e.target.value)}
-          >
-            <option value="">No Threshold</option>
-            <option value="10000">Above 10,000 BBL</option>
-            <option value="50000">Above 50,000 BBL</option>
-            <option value="100000">Above 100,000 BBL</option>
-            <option value="500000">Above 500,000 BBL</option>
-          </select>
-        </div>
-      </section>
-
-      {/* Operator Information */}
-      <section className={styles.section}>
-        <h3 className={styles.sectionTitle}>Operator Information</h3>
-
-        <div className={styles.field}>
-          <label className={styles.label}>Organization/Company</label>
-          <select
-            className={styles.select}
-            value={filters.organization}
-            onChange={(e) => handleInputChange('organization', e.target.value)}
-          >
-          
-            <option value="">All Companies</option>
-            <option value="exxon">ExxonMobil</option>
-            <option value="chevron">Chevron</option>
-            <option value="conocophillips">ConocoPhillips</option>
-            <option value="pioneer">Pioneer Natural Resources</option>
-            <option value="devon">Devon Energy</option>
-          </select>
-        </div>
+        )}
       </section>
 
       {/* Action Buttons */}
@@ -355,7 +311,7 @@ export default function Filters() {
           Apply Filters
         </button>
         <button className={styles.resetButton} onClick={handleReset}>
-          Reset
+          Clear All
         </button>
       </div>
     </div>

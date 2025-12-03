@@ -1,43 +1,178 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import 'leaflet/dist/leaflet.css';
-import { fetchWells } from './utils/api';
 
-export default function Map() {
+const Map = forwardRef(({ filters }, ref) => {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
-  const markersRef = useRef([]);
+  const markersLayerRef = useRef(null);
+  const highlightMarkerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Loading wells...');
+  const [wellCount, setWellCount] = useState({ filtered: 0, total: 0 });
   const router = useRouter();
+  const loadWellsTimeoutRef = useRef(null);
+  const filtersRef = useRef(filters);
+
+  // Keep filters ref updated
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  // Expose zoomToWell method to parent component
+  useImperativeHandle(ref, () => ({
+    zoomToWell: async (well) => {
+      if (!mapInstanceRef.current) return;
+
+      const L = (await import('leaflet')).default;
+
+      // Remove previous highlight if exists
+      if (highlightMarkerRef.current) {
+        mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
+        highlightMarkerRef.current = null;
+      }
+
+      // Create highlight icon (larger, different color)
+      const highlightIcon = L.icon({
+        iconUrl:
+          'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iMTAiIGZpbGw9IiNmNTlkNTAiIHN0cm9rZT0iIzYwYTVmYSIgc3Ryb2tlLXdpZHRoPSIzIi8+PC9zdmc+',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      // Create highlight marker
+      const popupContent = `
+        <div class="${styles.popupContent}">
+          <strong class="${styles.popupTitle}">Well: ${well.wellid || 'N/A'}</strong>
+          <div class="${styles.popupApi}">API: ${well.api || 'N/A'}</div>
+          <div class="${styles.popupApi}">Lease: ${well.leaseName || 'N/A'}</div>
+          <button class="${styles.popupButton} view-details-btn" data-id="${well.id}">
+            View Details
+          </button>
+        </div>
+      `;
+
+      highlightMarkerRef.current = L.marker([well.lat, well.lon], { 
+        icon: highlightIcon,
+        zIndexOffset: 1000 // Make sure it appears on top
+      })
+        .bindPopup(popupContent)
+        .addTo(mapInstanceRef.current);
+
+      // Zoom to the well
+      mapInstanceRef.current.setView([well.lat, well.lon], 14, {
+        animate: true,
+        duration: 1
+      });
+
+      // Open the popup
+      setTimeout(() => {
+        highlightMarkerRef.current.openPopup();
+        
+        // Add click handler to the button after popup is opened
+        const button = document.querySelector('.view-details-btn');
+        if (button) {
+          button.addEventListener('click', () => {
+            window.open(`/wells/${well.id}`, '_blank');
+          });
+        }
+      }, 500);
+
+      // Remove highlight after 10 seconds (optional)
+      setTimeout(() => {
+        if (highlightMarkerRef.current) {
+          mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
+          highlightMarkerRef.current = null;
+        }
+      }, 10000);
+    }
+  }));
 
   // Function to clear all markers
   const clearMarkers = () => {
-    markersRef.current.forEach(marker => marker.remove());
-    markersRef.current = [];
+    if (markersLayerRef.current && mapInstanceRef.current) {
+      mapInstanceRef.current.removeLayer(markersLayerRef.current);
+      markersLayerRef.current = null;
+    }
   };
-
-  // Function to load and display wells
+  
+  // Function to load and display wells with clustering
   const loadWells = async () => {
     if (!mapInstanceRef.current) return;
 
-    setIsLoading(true);
-    clearMarkers();
+    if (loadWellsTimeoutRef.current) {
+      clearTimeout(loadWellsTimeoutRef.current);
+    }
 
-    try {
-      const bounds = mapInstanceRef.current.getBounds();
-      const zoom = mapInstanceRef.current.getZoom();
-      const data = await fetchWells(bounds, zoom);
+    loadWellsTimeoutRef.current = setTimeout(async () => {
+      setIsLoading(true);
+      setLoadingMessage('Loading wells...');
+      clearMarkers();
 
-      if (!data.features) return;
+      try {
+        const bounds = mapInstanceRef.current.getBounds();
+        const zoom = mapInstanceRef.current.getZoom();
+        
+        // Build query params
+        const params = new URLSearchParams({
+          minLat: bounds.getSouth(),
+          maxLat: bounds.getNorth(),
+          minLon: bounds.getWest(),
+          maxLon: bounds.getEast(),
+          zoom: zoom
+        });
 
-      const L = await import('leaflet');
+        // Add filters using the ref to get current values
+        const currentFilters = filtersRef.current;
+        
+        if (currentFilters.counties && currentFilters.counties.length > 0) {
+          params.append('counties', currentFilters.counties.join(','));
+        }
+        if (currentFilters.districts && currentFilters.districts.length > 0) {
+          params.append('districts', currentFilters.districts.join(','));
+        }
+        if (currentFilters.wellType && currentFilters.wellType !== 'all') {
+          params.append('wellType', currentFilters.wellType);
+        }
+        if (currentFilters.completionDateStart) {
+          params.append('completionDateStart', currentFilters.completionDateStart);
+        }
+        if (currentFilters.completionDateEnd) {
+          params.append('completionDateEnd', currentFilters.completionDateEnd);
+        }
+        if (currentFilters.depthMin) {
+          params.append('depthMin', currentFilters.depthMin);
+        }
+        if (currentFilters.depthMax) {
+          params.append('depthMax', currentFilters.depthMax);
+        }
 
-      // Create marker for each well
-      data.features.forEach(well => {
-        const [lon, lat] = well.geometry.coordinates;
+        const response = await fetch(`http://localhost:3001/api/wells?${params}`);
+        const data = await response.json();
+
+        if (data.loading) {
+          setLoadingMessage('Server is loading well data...');
+          setTimeout(loadWells, 2000);
+          return;
+        }
+
+        // Update well count
+        setWellCount({
+          filtered: data.meta.totalFiltered || data.meta.totalAll || 0,
+          total: data.meta.totalAll || 0
+        });
+
+        if (!data.features || data.features.length === 0) {
+          setIsLoading(false);
+          return;
+        }
+
+        const L = (await import('leaflet')).default;
+
+        markersLayerRef.current = L.featureGroup();
 
         const wellIcon = L.icon({
           iconUrl:
@@ -46,57 +181,125 @@ export default function Map() {
           iconAnchor: [6, 6],
         });
 
-        const popupContent = `
-          <div style="text-align: center;">
-            <strong>Well: ${well.properties.wellid || 'N/A'}</strong><br>
-            API: ${well.properties.api || 'N/A'}<br>
-            <button 
-              class="view-details-btn"
-              data-id="${well.properties.id}"
-              style="margin-top: 8px; padding: 6px 12px; background-color: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;"
-            >
-              View Details
-            </button>
-          </div>
-        `;
+        const clusterIcon = (count) => {
+          const size = count < 100 ? 40 : count < 1000 ? 50 : 60;
+          const color = count < 100 ? '#dc2626' : count < 1000 ? '#991b1b' : '#7f1d1d';
+          
+          return L.divIcon({
+            html: `<div style="
+              background-color: ${color};
+              color: white;
+              border-radius: 50%;
+              width: ${size}px;
+              height: ${size}px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-weight: bold;
+              font-size: ${size > 50 ? '14px' : '12px'};
+              border: 3px solid rgba(255, 255, 255, 0.5);
+              box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            ">${count}</div>`,
+            className: 'custom-cluster-icon',
+            iconSize: L.point(size, size),
+            iconAnchor: [size / 2, size / 2]
+          });
+        };
 
-        const marker = L.marker([lat, lon], { icon: wellIcon })
-          .bindPopup(popupContent);
+        data.features.forEach(feature => {
+          const [lon, lat] = feature.geometry.coordinates;
 
-        marker.addTo(mapInstanceRef.current);
-        markersRef.current.push(marker);
-
-        //  Show popup on hover (no click needed)
-        marker.on('mouseover', function () {
-          this.openPopup();
-        });
-        marker.on('mouseout', function () {
-          this.closePopup();
-        });
-
-        // Click on marker opens well details in new tab
-        marker.on('click', function () {
-          window.open(`/wells/${well.properties.id}`, '_blank');
-        });
-
-        // Handle "View Details" button click in popup
-        marker.on('popupopen', () => {
-        const popupEl = document.querySelector('.view-details-btn');
-          if (popupEl) {
-            popupEl.addEventListener('click', () => {
-              const id = popupEl.getAttribute('data-id');
-              // Open in a new tab
-              window.open(`/wells/${id}`, '_blank');
+          if (feature.properties.cluster) {
+            const count = feature.properties.point_count;
+            const marker = L.marker([lat, lon], { 
+              icon: clusterIcon(count) 
             });
+
+            const popupContent = `
+              <div class="${styles.popupContent}">
+                <strong class="${styles.popupTitle}">Cluster</strong>
+                <div class="${styles.popupApi}">${count} wells</div>
+                <div class="${styles.popupApi}" style="font-size: 12px; margin-top: 4px;">
+                  Zoom in to see individual wells
+                </div>
+              </div>
+            `;
+
+            marker.bindPopup(popupContent);
+
+            marker.on('click', function () {
+              mapInstanceRef.current.setView([lat, lon], mapInstanceRef.current.getZoom() + 2);
+            });
+
+            markersLayerRef.current.addLayer(marker);
+
+          } else {
+            const well = feature.properties;
+
+            const popupContent = `
+              <div class="${styles.popupContent}">
+                <strong class="${styles.popupTitle}">Well: ${well.wellid || 'N/A'}</strong>
+                <div class="${styles.popupApi}">API: ${well.api || 'N/A'}</div>
+                <button class="${styles.popupButton} view-details-btn" data-id="${well.id}">
+                  View Details
+                </button>
+              </div>
+            `;
+
+            const marker = L.marker([lat, lon], { icon: wellIcon })
+              .bindPopup(popupContent);
+
+            marker.on('mouseover', function () {
+              this.openPopup();
+            });
+
+            marker.on('mouseout', function () {
+              this.closePopup();
+            });
+
+            // Add click handler to marker that opens details page
+            marker.on('click', function () {
+              window.open(`/wells/${well.id}`, '_blank');
+            });
+
+            // Add event listener when popup opens to handle button click
+            marker.on('popupopen', function () {
+              const button = document.querySelector('.view-details-btn');
+              if (button) {
+                button.addEventListener('click', (e) => {
+                  e.stopPropagation(); // Prevent marker click event
+                  window.open(`/wells/${well.id}`, '_blank');
+                });
+              }
+            });
+
+            markersLayerRef.current.addLayer(marker);
           }
         });
-      });
-    } catch (error) {
-      console.error('Error loading wells:', error);
-    } finally {
-      setIsLoading(false);
-    }
+
+        mapInstanceRef.current.addLayer(markersLayerRef.current);
+
+        console.log(`Displayed ${data.features.length} items (clusters + wells)`);
+
+      } catch (error) {
+        console.error('Error loading wells:', error);
+        if (error.message && error.message.includes('loading')) {
+          setLoadingMessage('Server is preparing data...');
+          setTimeout(loadWells, 2000);
+          return;
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    }, 300);
   };
+
+  // Load wells when filters change
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      loadWells();
+    }
+  }, [filters]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && mapRef.current && !mapInstanceRef.current) {
@@ -113,7 +316,7 @@ export default function Map() {
           .then(texasGeoJSON => {
             const texasBorder = L.geoJSON(texasGeoJSON, {
               style: {
-                color: '#dc2626',
+                color: '#992626',
                 weight: 3,
                 fillColor: '#fef2f2',
                 fillOpacity: 0.15,
@@ -126,6 +329,8 @@ export default function Map() {
             mapInstanceRef.current.setMaxBounds(bounds.pad(0.1));
 
             loadWells();
+            
+            // Attach event listeners
             mapInstanceRef.current.on('zoomend', loadWells);
             mapInstanceRef.current.on('moveend', loadWells);
           })
@@ -140,11 +345,60 @@ export default function Map() {
         mapInstanceRef.current.off('zoomend', loadWells);
         mapInstanceRef.current.off('moveend', loadWells);
         clearMarkers();
+        if (highlightMarkerRef.current) {
+          mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
+        }
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
     };
   }, []);
 
-  return <div ref={mapRef} className={styles.mapContainer}></div>;
-}
+  const hasFilters = filters.counties?.length > 0 || filters.districts?.length > 0 || 
+                     (filters.wellType && filters.wellType !== 'all') ||
+                     filters.completionDateStart || filters.completionDateEnd ||
+                     filters.depthMin || filters.depthMax;
+
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div ref={mapRef} className={styles.mapContainer}></div>
+      {isLoading && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: '#992626',
+          color: 'white',
+          padding: '8px 12px',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+          fontSize: '14px'
+        }}>
+          {loadingMessage}
+        </div>
+      )}
+      {!isLoading && hasFilters && (
+        <div style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: '#1f2937',
+          color: '#e5e7eb',
+          padding: '8px 12px',
+          borderRadius: '4px',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+          fontSize: '14px',
+          border: '1px solid #374151'
+        }}>
+          Showing {wellCount.filtered.toLocaleString()} of {wellCount.total.toLocaleString()} wells
+        </div>
+      )}
+    </div>
+  );
+});
+
+Map.displayName = 'Map';
+
+export default Map;
