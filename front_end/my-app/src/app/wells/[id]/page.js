@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchWellDetails } from '../../utils/api';
 import HelpModal from '../../HelpModal';
+import ProductionChart from '@/app/ProductionChart';
 import styles from './page.module.css';
 
 export default function WellDetailPage() {
@@ -323,12 +324,7 @@ export default function WellDetailPage() {
 
         {activeTab === 'production' && (
           <div className={styles.sections}>
-            <section className={styles.section}>
-              <h3 className={styles.sectionTitle}>Production Data</h3>
-              <div className={styles.placeholderContent}>
-                <p>Production data visualization will be displayed here.</p>
-              </div>
-            </section>
+              <ProductionChart wellId={params.id} />
           </div>
         )}
       </main>

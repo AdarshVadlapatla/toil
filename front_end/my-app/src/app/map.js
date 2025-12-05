@@ -149,6 +149,31 @@ const Map = forwardRef(({ filters }, ref) => {
         if (currentFilters.depthMax) {
           params.append('depthMax', currentFilters.depthMax);
         }
+        if (currentFilters.operators && currentFilters.operators.length > 0) {
+          params.append('operators', currentFilters.operators.join(','));
+        }
+        if (currentFilters.fields && currentFilters.fields.length > 0) {
+          params.append('fields', currentFilters.fields.join(','));
+        }
+
+        if (currentFilters.productionTotalMin) {
+          params.append('productionTotalMin', currentFilters.productionTotalMin);
+        }
+        if (currentFilters.productionTotalMax) {
+          params.append('productionTotalMax', currentFilters.productionTotalMax);
+        }
+        if (currentFilters.productionAvgMin) {
+          params.append('productionAvgMin', currentFilters.productionAvgMin);
+        }
+        if (currentFilters.productionAvgMax) {
+          params.append('productionAvgMax', currentFilters.productionAvgMax);
+        }
+        if (currentFilters.productionMaxMin) {
+          params.append('productionMaxMin', currentFilters.productionMaxMin);
+        }
+        if (currentFilters.productionMaxMax) {
+          params.append('productionMaxMax', currentFilters.productionMaxMax);
+        }
 
         const response = await fetch(`http://localhost:3001/api/wells?${params}`);
         const data = await response.json();
@@ -355,9 +380,13 @@ const Map = forwardRef(({ filters }, ref) => {
   }, []);
 
   const hasFilters = filters.counties?.length > 0 || filters.districts?.length > 0 || 
-                     (filters.wellType && filters.wellType !== 'all') ||
-                     filters.completionDateStart || filters.completionDateEnd ||
-                     filters.depthMin || filters.depthMax;
+                   filters.operators?.length > 0 || filters.fields?.length > 0 ||
+                   (filters.wellType && filters.wellType !== 'all') ||
+                   filters.completionDateStart || filters.completionDateEnd ||
+                   filters.depthMin || filters.depthMax ||
+                   filters.productionTotalMin || filters.productionTotalMax ||
+                   filters.productionAvgMin || filters.productionAvgMax ||
+                   filters.productionMaxMin || filters.productionMaxMax;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
