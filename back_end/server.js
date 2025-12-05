@@ -331,6 +331,99 @@ app.get('/api/wells', async (req, res) => {
   }
 });
 
+// GET /api/wells/:id/production - Get production data for a well
+app.get('/api/wells/:id/production', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // First get the well location to find the API
+    const { data: locationData, error: locationError } = await supabase
+      .from('well_locations')
+      .select('api')
+      .eq('surface_id', id)
+      .single();
+    
+    if (locationError || !locationData || !locationData.api) {
+      return res.status(404).json({ 
+        error: 'Well not found',
+        available: false 
+      });
+    }
+    
+    // Get well details for matching
+    const { data: wellData, error: wellError } = await supabase
+      .from('filtered_well_information')
+      .select('lease_name, well_no, county_code, district_code, oil_gas_code')
+      .eq('api_no', locationData.api)
+      .maybeSingle();
+    
+    if (wellError || !wellData) {
+      return res.status(404).json({ 
+        error: 'Well details not found',
+        available: false 
+      });
+    }
+
+    // Check if this is a gas well
+    if (wellData.oil_gas_code !== 'G') {
+      return res.json({
+        available: false,
+        reason: 'oil_well',
+        message: 'Production data is only available for gas wells at this time.'
+      });
+    }
+    
+    // Query gas production data using multiple matching fields
+    let query = supabase
+      .from('gas_production')
+      .select('year_month, gas_production, well_type_month')
+      .order('year_month', { ascending: true });
+
+    // Match on lease_name, well_no, and county_code only
+    if (wellData.lease_name) query = query.eq('lease_name', wellData.lease_name);
+    if (wellData.well_no) query = query.eq('well_no', wellData.well_no);
+    if (wellData.county_code) query = query.eq('county_code', wellData.county_code);
+    
+    const { data: productionData, error: prodError } = await query;
+    
+    if (prodError) {
+      console.error('Production query error:', prodError);
+      return res.status(500).json({ 
+        error: 'Failed to fetch production data',
+        available: false 
+      });
+    }
+
+    // If no production data found
+    if (!productionData || productionData.length === 0) {
+      return res.json({
+        available: false,
+        reason: 'no_data',
+        message: 'Production data is not available for this well at this time.'
+      });
+    }
+    
+    res.json({
+      available: true,
+      production: productionData,
+      wellInfo: {
+        leaseName: wellData.lease_name,
+        wellNo: wellData.well_no,
+        county: wellData.county_code,
+        district: wellData.district_code,
+        wellType: wellData.oil_gas_code
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching production data:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      available: false 
+    });
+  }
+});
+
 // GET /api/wells/:id - Get single well details
 app.get('/api/wells/:id', async (req, res) => {
   try {

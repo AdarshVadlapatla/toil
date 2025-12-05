@@ -1,0 +1,150 @@
+.container {
+  background-color: #1f2937;
+  border-radius: 0.75rem;
+  padding: 2rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  border: 1px solid #374151;
+}
+
+.header {
+  margin-bottom: 1.5rem;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f9fafb;
+  margin: 0 0 0.75rem 0;
+}
+
+.wellInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid #374151;
+}
+
+.infoLabel {
+  color: #9ca3af;
+  font-weight: 600;
+}
+
+.infoValue {
+  color: #e5e7eb;
+}
+
+.infoSeparator {
+  color: #4a5568;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.statCard {
+  background-color: #2d3748;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  border: 1px solid #4a5568;
+}
+
+.statLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.statValue {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #e5e7eb;
+}
+
+.chartContainer {
+  height: 400px;
+  background-color: #2d3748;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  border: 1px solid #4a5568;
+}
+
+.loadingContainer,
+.errorContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  background-color: #2d3748;
+  border-radius: 0.5rem;
+  border: 1px solid #4a5568;
+}
+
+.spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 4px solid #374151;
+  border-top-color: #992626;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingText {
+  margin-top: 1rem;
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.errorIcon {
+  width: 3rem;
+  height: 3rem;
+  color: #ef4444;
+  margin-bottom: 1rem;
+}
+
+.errorText {
+  color: #d1d5db;
+  font-size: 0.95rem;
+  text-align: center;
+  max-width: 500px;
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .chartContainer {
+    height: 300px;
+    padding: 1rem;
+  }
+
+  .title {
+    font-size: 1.25rem;
+  }
+
+  .wellInfo {
+    font-size: 0.8rem;
+  }
+}
