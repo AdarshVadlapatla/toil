@@ -64,7 +64,6 @@ async function loadAllWells() {
   return wells;
 }
 
-// Function to load well details for filtering
 async function loadWellDetails() {
   console.log('Loading well details for filtering...');
   const BATCH_SIZE = 1000;
@@ -76,7 +75,7 @@ async function loadWellDetails() {
 
     const { data: batch, error } = await supabase
       .from('filtered_well_information')
-      .select('api_no, county_name, district_code, oil_gas_code, completion_date, api_depth, lease_name, operator_name, field_name')
+      .select('api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name') // Added well_no and county_code
       .range(start, end);
 
     if (error) {
@@ -100,11 +99,116 @@ async function loadWellDetails() {
   // Extract unique filter options
   const counties = [...new Set(wellDetails.map(w => w.county_name).filter(Boolean))].sort();
   const districts = [...new Set(wellDetails.map(w => w.district_code).filter(Boolean))].sort();
+  const operators = [...new Set(wellDetails.map(w => w.operator_name).filter(Boolean))].sort();
+  const fields = [...new Set(wellDetails.map(w => w.field_name).filter(Boolean))].sort();
 
-  filterOptions = { counties, districts };
-  console.log(`Filter options ready: ${counties.length} counties, ${districts.length} districts`);
+  filterOptions = { counties, districts, operators, fields };
+  console.log(`Filter options ready: ${counties.length} counties, ${districts.length} districts, ${operators.length} operators, ${fields.length} fields`);
 
   return wellDetails;
+}
+
+// Function to calculate production statistics using materialized view
+async function loadProductionStatistics() {
+  console.log('Loading production statistics from materialized view...');
+  const startTime = Date.now();
+  
+  try {
+    const BATCH_SIZE = 1000;
+    let allStats = [];
+    let start = 0;
+
+    // Batch-fetch from the materialized view
+    while (true) {
+      const end = start + BATCH_SIZE - 1;
+
+      const { data: batch, error } = await supabase
+        .from('well_production_summary')
+        .select('lease_name, well_no, county_code, total_production, avg_production, max_production')
+        .range(start, end);
+
+      if (error) {
+        console.error('Error fetching production stats batch:', error);
+        throw error;
+      }
+
+      if (!batch || batch.length === 0) {
+        break;
+      }
+
+      allStats = allStats.concat(batch);
+      console.log(`Loaded ${allStats.length} production statistics so far...`);
+
+      start += BATCH_SIZE;
+    }
+
+    console.log(`Total production statistics loaded: ${allStats.length}`);
+
+    // Create a map for fast lookup
+    const statsMap = new Map();
+    allStats.forEach(stat => {
+      const key = `${stat.lease_name}|${stat.well_no}|${stat.county_code}`;
+      statsMap.set(key, {
+        totalProduction: parseFloat(stat.total_production) || 0,
+        avgProduction: Math.round(parseFloat(stat.avg_production)) || 0,
+        maxProduction: parseInt(stat.max_production) || 0
+      });
+    });
+
+    // Match statistics to wells in wellsWithDetailsCache
+    if (wellsWithDetailsCache) {
+      let matchedCount = 0;
+      let attemptedMatches = 0;
+      
+      wellsWithDetailsCache.forEach(well => {
+        const key = `${well.lease_name}|${well.well_no}|${well.county_code}`;
+        const stats = statsMap.get(key);
+        
+        attemptedMatches++;
+        
+        // DEBUG: Log first failed match
+        if (!stats && attemptedMatches <= 3) {
+          console.log(`Failed match for well key: "${key}"`);
+          console.log(`  Looking for this key in statsMap...`);
+          // Check if any similar keys exist
+          const similarKeys = Array.from(statsMap.keys()).filter(k => 
+            k.includes(well.lease_name?.substring(0, 5) || 'XXX')
+          ).slice(0, 3);
+          console.log(`  Similar keys found:`, similarKeys);
+        }
+        
+        if (stats) {
+          well.production_total = stats.totalProduction;
+          well.production_avg = stats.avgProduction;
+          well.production_max = stats.maxProduction;
+          matchedCount++;
+          
+        } else {
+          // No production data found (oil well or no data)
+          well.production_total = 0;
+          well.production_avg = 0;
+          well.production_max = 0;
+        }
+      });
+
+      console.log(`Production statistics matched: ${matchedCount} wells with data, ${wellsWithDetailsCache.length - matchedCount} without data`);
+    }
+
+    const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`Production statistics loaded in ${loadTime} seconds`);
+
+  } catch (error) {
+    console.error('Failed to load production statistics:', error);
+    // Set all wells to 0 production if error
+    if (wellsWithDetailsCache) {
+      wellsWithDetailsCache.forEach(well => {
+        well.production_total = 0;
+        well.production_avg = 0;
+        well.production_max = 0;
+      });
+    }
+    console.log('Production statistics set to 0 for all wells due to error');
+  }
 }
 
 // Function to create supercluster index from filtered wells
@@ -165,7 +269,7 @@ app.get('/api/filter-options', async (req, res) => {
 // GET /api/wells - Get wells with clustering and optional filtering
 app.get('/api/wells', async (req, res) => {
   try {
-    const { zoom, minLat, maxLat, minLon, maxLon, counties, districts, wellType, completionDateStart, completionDateEnd, depthMin, depthMax } = req.query;
+    const { zoom, minLat, maxLat, minLon, maxLon, counties, districts, operators, fields, wellType, completionDateStart, completionDateEnd, depthMin, depthMax, productionTotalMin, productionTotalMax, productionAvgMin, productionAvgMax, productionMaxMin, productionMaxMax } = req.query;
 
     if (!zoom || !minLat || !maxLat || !minLon || !maxLon) {
       return res
@@ -189,8 +293,23 @@ app.get('/api/wells', async (req, res) => {
     const dateEnd = completionDateEnd || null;
     const minDepth = depthMin ? parseFloat(depthMin) : null;
     const maxDepth = depthMax ? parseFloat(depthMax) : null;
+    const operatorFilter = operators ? operators.split(',').filter(Boolean) : [];
+    const fieldFilter = fields ? fields.split(',').filter(Boolean) : [];
+    const prodTotalMin = productionTotalMin ? parseFloat(productionTotalMin) : null;
+    const prodTotalMax = productionTotalMax ? parseFloat(productionTotalMax) : null;
+    const prodAvgMin = productionAvgMin ? parseFloat(productionAvgMin) : null;
+    const prodAvgMax = productionAvgMax ? parseFloat(productionAvgMax) : null;
+    const prodMaxMin = productionMaxMin ? parseFloat(productionMaxMin) : null;
+    const prodMaxMax = productionMaxMax ? parseFloat(productionMaxMax) : null;
 
-    const hasFilters = countyFilter.length > 0 || districtFilter.length > 0 || wellTypeFilter || dateStart || dateEnd || minDepth !== null || maxDepth !== null;
+    const hasFilters = countyFilter.length > 0 || districtFilter.length > 0 || 
+                   operatorFilter.length > 0 || fieldFilter.length > 0 ||
+                   wellTypeFilter || dateStart || dateEnd || 
+                   minDepth !== null || maxDepth !== null ||
+                   prodTotalMin !== null || prodTotalMax !== null ||
+                   prodAvgMin !== null || prodAvgMax !== null ||
+                   prodMaxMin !== null || prodMaxMax !== null;
+
 
     let filteredWells = wellsCache;
     let indexToUse = superclusterIndex;
@@ -202,7 +321,9 @@ app.get('/api/wells', async (req, res) => {
         districts: districtFilter.length,
         wellType: wellTypeFilter,
         dateRange: dateStart || dateEnd ? `${dateStart} to ${dateEnd}` : 'none',
-        depthRange: minDepth !== null || maxDepth !== null ? `${minDepth} to ${maxDepth}` : 'none'
+        depthRange: minDepth !== null || maxDepth !== null ? `${minDepth} to ${maxDepth}` : 'none',
+        operators: operatorFilter.length, 
+        fields: fieldFilter.length
       });
       
       // Create a map of API to well details for fast lookup
@@ -257,6 +378,52 @@ app.get('/api/wells', async (req, res) => {
             matches = false;
           }
           if (maxDepth !== null && depth > maxDepth) {
+            matches = false;
+          }
+        }
+
+        // Operator filter
+        if (operatorFilter.length > 0) {
+          matches = matches && operatorFilter.includes(details.operator_name);
+        }
+
+        // Field filter
+        if (fieldFilter.length > 0) {
+          matches = matches && fieldFilter.includes(details.field_name);
+        }
+
+        // Total production filter
+        if (prodTotalMin !== null || prodTotalMax !== null) {
+          const totalProd = details.production_total || 0;
+          
+          if (prodTotalMin !== null && totalProd < prodTotalMin) {
+            matches = false;
+          }
+          if (prodTotalMax !== null && totalProd > prodTotalMax) {
+            matches = false;
+          }
+        }
+
+        // Average production filter
+        if (prodAvgMin !== null || prodAvgMax !== null) {
+          const avgProd = details.production_avg || 0;
+          
+          if (prodAvgMin !== null && avgProd < prodAvgMin) {
+            matches = false;
+          }
+          if (prodAvgMax !== null && avgProd > prodAvgMax) {
+            matches = false;
+          }
+        }
+
+        // Max production filter
+        if (prodMaxMin !== null || prodMaxMax !== null) {
+          const maxProd = details.production_max || 0;
+          
+          if (prodMaxMin !== null && maxProd < prodMaxMin) {
+            matches = false;
+          }
+          if (prodMaxMax !== null && maxProd > prodMaxMax) {
             matches = false;
           }
         }
@@ -579,6 +746,7 @@ app.post('/api/cache/reload', async (req, res) => {
     console.log('Manual cache reload requested...');
     await loadAllWells();
     await loadWellDetails();
+    await loadProductionStatistics(); 
     await initializeSupercluster();
     res.json({ 
       success: true, 
@@ -612,6 +780,7 @@ app.listen(PORT, async () => {
   try {
     await loadAllWells();
     await loadWellDetails();
+    await loadProductionStatistics(); 
     await initializeSupercluster();
     console.log('Server is ready to handle requests!');
   } catch (error) {

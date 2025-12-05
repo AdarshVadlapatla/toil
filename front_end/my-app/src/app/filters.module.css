@@ -20,27 +20,6 @@
   pointer-events: none;
 }
 
-.searchInput {
-  width: 100%;
-  padding: 0.75rem 1rem 0.75rem 3rem;
-  background-color: #2d3748;
-  border: 1px solid #4a5568;
-  border-radius: 0.5rem;
-  font-size: 0.875rem;
-  color: #e5e7eb;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.searchInput::placeholder {
-  color: #9ca3af;
-}
-
-.searchInput:focus {
-  border-color: #60a5fa;
-  background-color: #374151;
-}
-
 .section {
   border-bottom: 1px solid #374151;
 }
@@ -158,32 +137,103 @@
 }
 
 .checkboxScrollContainer {
-  max-height: 200px;
-  overflow-y: auto;
-  padding: 0.5rem;
   background-color: #2d3748;
   border: 1px solid #4a5568;
   border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* Search Input Wrapper - Sticky at top */
+.searchInputWrapper {
+  position: sticky;
+  top: 0;
+  background-color: #1f2937;
+  padding: 0.75rem;
+  border-bottom: 1px solid #4a5568;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.searchInputIcon {
+  width: 1rem;
+  height: 1rem;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background-color: #2d3748;
+  border: 1px solid #4a5568;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.searchInput::placeholder {
+  color: #6b7280;
+}
+
+.searchInput:focus {
+  border-color: #60a5fa;
+}
+
+.searchClearButton {
+  width: 1.5rem;
+  height: 1.5rem;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  flex-shrink: 0;
+  border-radius: 0.25rem;
+}
+
+.searchClearButton:hover {
+  color: #e5e7eb;
+  background-color: #374151;
+}
+
+.searchClearButton svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+/* Checkbox List - Scrollable area below search */
+.checkboxList {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.checkboxScrollContainer::-webkit-scrollbar {
+.checkboxList::-webkit-scrollbar {
   width: 8px;
 }
 
-.checkboxScrollContainer::-webkit-scrollbar-track {
+.checkboxList::-webkit-scrollbar-track {
   background: #1f2937;
   border-radius: 4px;
 }
 
-.checkboxScrollContainer::-webkit-scrollbar-thumb {
+.checkboxList::-webkit-scrollbar-thumb {
   background: #4a5568;
   border-radius: 4px;
 }
 
-.checkboxScrollContainer::-webkit-scrollbar-thumb:hover {
+.checkboxList::-webkit-scrollbar-thumb:hover {
   background: #60a5fa;
 }
 
@@ -209,6 +259,14 @@
   height: 1.125rem;
   accent-color: #992626;
   flex-shrink: 0;
+}
+
+.noResults {
+  text-align: center;
+  padding: 1.5rem;
+  color: #6b7280;
+  font-size: 0.875rem;
+  font-style: italic;
 }
 
 .input {
@@ -316,4 +374,30 @@
 
 .resetButton:active {
   transform: scale(0.98);
+}
+
+.productionNote {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: #1f2937;
+  border: 1px solid #4a5568;
+  border-radius: 0.5rem;
+  margin-bottom: 1rem;
+  align-items: flex-start;
+}
+
+.noteIcon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #992626;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.productionNote p {
+  font-size: 0.8rem;
+  color: #d1d5db;
+  line-height: 1.5;
+  margin: 0;
 }
