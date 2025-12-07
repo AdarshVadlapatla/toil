@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import Supercluster from 'supercluster';
+import { linearRegression, standardDeviation, mean } from 'simple-statistics';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -498,6 +499,125 @@ app.get('/api/wells', async (req, res) => {
   }
 });
 
+// Forecasting function using exponential smoothing and linear regression
+function forecastProduction(productionData, monthsAhead = 12) {
+  if (!productionData || productionData.length < 3) {
+    return null;
+  }
+
+  // Sort by date to ensure chronological order
+  const sorted = [...productionData].sort((a, b) => 
+    new Date(a.year_month) - new Date(b.year_month)
+  );
+
+  // Extract values and time indices
+  const values = sorted.map(d => parseFloat(d.gas_production) || 0);
+  const n = values.length;
+  
+  // Calculate trend using linear regression
+  const timeIndices = values.map((_, i) => i);
+  const regression = linearRegression(
+    timeIndices.map((x, i) => [x, values[i]])
+  );
+
+  // Exponential smoothing parameters
+  const alpha = 0.3; // Smoothing factor for level
+  const beta = 0.2;   // Smoothing factor for trend
+  
+  // Initialize with first values
+  let level = values[0];
+  let trend = n > 1 ? (values[1] - values[0]) : 0;
+  
+  // Apply exponential smoothing (Holt's method)
+  const smoothed = [values[0]];
+  for (let i = 1; i < n; i++) {
+    const prevLevel = level;
+    level = alpha * values[i] + (1 - alpha) * (level + trend);
+    trend = beta * (level - prevLevel) + (1 - beta) * trend;
+    smoothed.push(level);
+  }
+
+  // Calculate residuals and standard deviation for confidence intervals
+  const residuals = values.map((val, i) => val - smoothed[i]);
+  const stdDev = residuals.length > 1 ? standardDeviation(residuals) : Math.sqrt(mean(values.map(v => v * v)));
+  const meanVal = mean(values);
+  
+  // Generate forecasts
+  const forecasts = [];
+  // Parse the last date properly - handle different date formats
+  let lastDateStr = sorted[sorted.length - 1].year_month;
+  let lastDate;
+  
+  // Try to parse the date string
+  if (typeof lastDateStr === 'string') {
+    // Handle YYYY-MM-DD format
+    if (lastDateStr.includes('-')) {
+      const parts = lastDateStr.split('-');
+      lastDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2] || 1));
+    } else {
+      lastDate = new Date(lastDateStr);
+    }
+  } else {
+    lastDate = new Date(lastDateStr);
+  }
+  
+  // Validate the date
+  if (isNaN(lastDate.getTime())) {
+    // Fallback to current date if parsing fails
+    lastDate = new Date();
+  }
+  
+  for (let i = 1; i <= monthsAhead; i++) {
+    const forecastDate = new Date(lastDate);
+    forecastDate.setMonth(forecastDate.getMonth() + i);
+    
+    // Format as YYYY-MM-DD
+    const year = forecastDate.getFullYear();
+    const month = String(forecastDate.getMonth() + 1).padStart(2, '0');
+    const day = '01';
+    const formattedDate = `${year}-${month}-${day}`;
+    
+    // Use exponential smoothing forecast
+    const expForecast = level + (trend * i);
+    
+    // Use linear regression forecast
+    const linForecast = regression.m * (n + i - 1) + regression.b;
+    
+    // Combine both methods (weighted average)
+    const combinedForecast = 0.6 * expForecast + 0.4 * linForecast;
+    
+    // Ensure forecast doesn't go negative
+    const forecast = Math.max(0, combinedForecast);
+    
+    // Calculate confidence intervals (95% confidence)
+    // Use a simpler formula if stdDev is very small or zero
+    const baseInterval = stdDev > 0 ? stdDev : Math.abs(forecast * 0.1);
+    const confidenceInterval = 1.96 * baseInterval * Math.sqrt(1 + (1 / n) + (Math.pow(i, 2) / Math.max(1, n * (n + 1) / 2)));
+    const upperBound = forecast + confidenceInterval;
+    const lowerBound = Math.max(0, forecast - confidenceInterval);
+    
+    forecasts.push({
+      year_month: formattedDate,
+      forecast: Math.round(forecast),
+      upper_bound: Math.round(upperBound),
+      lower_bound: Math.round(lowerBound),
+      confidence: 0.95
+    });
+  }
+
+  return {
+    forecasts,
+    model_info: {
+      method: 'exponential_smoothing_linear_regression',
+      data_points: n,
+      trend: trend > 0 ? 'increasing' : trend < 0 ? 'decreasing' : 'stable',
+      avg_production: Math.round(meanVal),
+      std_deviation: Math.round(stdDev),
+      last_known_date: sorted[sorted.length - 1].year_month
+    }
+  };
+}
+
 // GET /api/wells/:id/production - Get production data for a well
 app.get('/api/wells/:id/production', async (req, res) => {
   try {
@@ -584,6 +704,111 @@ app.get('/api/wells/:id/production', async (req, res) => {
     
   } catch (error) {
     console.error('Error fetching production data:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      available: false 
+    });
+  }
+});
+
+// GET /api/wells/:id/forecast - Get AI forecast for production data
+app.get('/api/wells/:id/forecast', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const monthsAhead = parseInt(req.query.months) || 12;
+    
+    // First get the well location to find the API
+    const { data: locationData, error: locationError } = await supabase
+      .from('well_locations')
+      .select('api')
+      .eq('surface_id', id)
+      .single();
+    
+    if (locationError || !locationData || !locationData.api) {
+      return res.status(404).json({ 
+        error: 'Well not found',
+        available: false 
+      });
+    }
+    
+    // Get well details for matching
+    const { data: wellData, error: wellError } = await supabase
+      .from('filtered_well_information')
+      .select('lease_name, well_no, county_code, district_code, oil_gas_code')
+      .eq('api_no', locationData.api)
+      .maybeSingle();
+    
+    if (wellError || !wellData) {
+      return res.status(404).json({ 
+        error: 'Well details not found',
+        available: false 
+      });
+    }
+
+    // Check if this is a gas well
+    if (wellData.oil_gas_code !== 'G') {
+      return res.json({
+        available: false,
+        reason: 'oil_well',
+        message: 'Forecasting is only available for gas wells at this time.'
+      });
+    }
+    
+    // Query gas production data
+    let query = supabase
+      .from('gas_production')
+      .select('year_month, gas_production, well_type_month')
+      .order('year_month', { ascending: true });
+
+    if (wellData.lease_name) query = query.eq('lease_name', wellData.lease_name);
+    if (wellData.well_no) query = query.eq('well_no', wellData.well_no);
+    if (wellData.county_code) query = query.eq('county_code', wellData.county_code);
+    
+    const { data: productionData, error: prodError } = await query;
+    
+    if (prodError) {
+      console.error('Production query error:', prodError);
+      return res.status(500).json({ 
+        error: 'Failed to fetch production data',
+        available: false 
+      });
+    }
+
+    if (!productionData || productionData.length < 3) {
+      return res.json({
+        available: false,
+        reason: 'insufficient_data',
+        message: 'At least 3 months of production data are required for forecasting.'
+      });
+    }
+    
+    // Generate forecast
+    const forecast = forecastProduction(productionData, monthsAhead);
+    
+    if (!forecast) {
+      return res.json({
+        available: false,
+        reason: 'forecast_failed',
+        message: 'Unable to generate forecast with available data.'
+      });
+    }
+    
+    res.json({
+      available: true,
+      forecast: forecast.forecasts,
+      model_info: forecast.model_info,
+      historical_data_points: productionData.length,
+      wellInfo: {
+        leaseName: wellData.lease_name,
+        wellNo: wellData.well_no,
+        county: wellData.county_code,
+        district: wellData.district_code,
+        wellType: wellData.oil_gas_code
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error generating forecast:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       available: false 

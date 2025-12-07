@@ -29,7 +29,10 @@ ChartJS.register(
 
 export default function ProductionChart({ wellId }) {
   const [productionData, setProductionData] = useState(null);
+  const [forecastData, setForecastData] = useState(null);
+  const [showForecast, setShowForecast] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [forecastLoading, setForecastLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -45,6 +48,11 @@ export default function ProductionChart({ wellId }) {
         } else {
           setProductionData(data);
           setError(null);
+          
+          // Fetch forecast data if production data is available
+          if (data.available && data.production && data.production.length >= 3) {
+            fetchForecastData();
+          }
         }
       } catch (err) {
         console.error('Error fetching production data:', err);
@@ -52,6 +60,23 @@ export default function ProductionChart({ wellId }) {
         setProductionData(null);
       } finally {
         setLoading(false);
+      }
+    };
+
+    const fetchForecastData = async () => {
+      try {
+        setForecastLoading(true);
+        const response = await fetch(`http://localhost:3001/api/wells/${wellId}/forecast?months=12`);
+        const data = await response.json();
+
+        if (data.available) {
+          setForecastData(data);
+        }
+      } catch (err) {
+        console.error('Error fetching forecast data:', err);
+        // Don't set error, just don't show forecast
+      } finally {
+        setForecastLoading(false);
       }
     };
 
@@ -92,36 +117,152 @@ export default function ProductionChart({ wellId }) {
   }
 
   // Prepare chart data
-  const labels = productionData.production.map(item => {
+  const historicalLabels = productionData.production.map(item => {
     const date = new Date(item.year_month);
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
   });
 
-  const dataValues = productionData.production.map(item => item.gas_production || 0);
+  const historicalValues = productionData.production.map(item => item.gas_production || 0);
 
-  // Calculate statistics
-  const totalProduction = dataValues.reduce((sum, val) => sum + val, 0);
-  const avgProduction = dataValues.length > 0 ? totalProduction / dataValues.length : 0;
-  const maxProduction = Math.max(...dataValues);
+  // Prepare forecast data if available
+  let forecastLabels = [];
+  let forecastValues = [];
+  let forecastUpper = [];
+  let forecastLower = [];
+  
+  if (showForecast && forecastData && forecastData.forecast) {
+    forecastLabels = forecastData.forecast.map(item => {
+      // Handle date parsing - the backend sends dates like "2024-12-01"
+      let date;
+      if (item.year_month) {
+        // Try parsing YYYY-MM-DD format first (most common)
+        if (typeof item.year_month === 'string' && item.year_month.includes('-')) {
+          const parts = item.year_month.split('-');
+          if (parts.length >= 2) {
+            // Create date from parts: year, month (0-indexed), day
+            date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2] || 1));
+          } else {
+            date = new Date(item.year_month);
+          }
+        } else {
+          // Try standard date parsing
+          date = new Date(item.year_month);
+        }
+        
+        // Validate the date
+        if (isNaN(date.getTime())) {
+          // Fallback to current date if parsing fails
+          date = new Date();
+        }
+      } else {
+        date = new Date();
+      }
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+    });
+    forecastValues = forecastData.forecast.map(item => item.forecast);
+    forecastUpper = forecastData.forecast.map(item => item.upper_bound);
+    forecastLower = forecastData.forecast.map(item => item.lower_bound);
+  }
+
+  // Combine labels (historical + forecast)
+  const allLabels = [...historicalLabels, ...forecastLabels];
+  
+  // Create datasets array
+  const datasets = [
+    {
+      label: 'Gas Production (MCF)',
+      data: [...historicalValues, ...new Array(forecastLabels.length).fill(null)],
+      borderColor: '#992626',
+      backgroundColor: 'rgba(153, 38, 38, 0.1)',
+      tension: 0.4,
+      fill: true,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      pointBackgroundColor: '#992626',
+      pointBorderColor: '#fff',
+      pointBorderWidth: 2,
+    }
+  ];
+
+  // Add forecast datasets if available
+  if (showForecast && forecastData && forecastData.forecast && forecastLabels.length > 0) {
+    // Add a connecting point from last historical to first forecast
+    const lastHistoricalValue = historicalValues[historicalValues.length - 1];
+    const firstForecastValue = forecastValues[0];
+    
+    // Upper bound for confidence interval
+    datasets.push({
+      label: 'Forecast Upper Bound (95% CI)',
+      data: [
+        ...new Array(historicalValues.length - 1).fill(null),
+        lastHistoricalValue, // Connect to last historical point
+        ...forecastUpper
+      ],
+      borderColor: 'rgba(34, 197, 94, 0.4)',
+      backgroundColor: 'rgba(34, 197, 94, 0.1)',
+      borderWidth: 1,
+      borderDash: [3, 3],
+      fill: '+1',
+      pointRadius: 0,
+      tension: 0.4,
+    });
+
+    // Forecast line
+    datasets.push({
+      label: 'AI Forecast',
+      data: [
+        ...new Array(historicalValues.length - 1).fill(null),
+        lastHistoricalValue, // Connect to last historical point
+        ...forecastValues
+      ],
+      borderColor: '#3b82f6',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [8, 4],
+      tension: 0.4,
+      fill: false,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      pointBackgroundColor: '#3b82f6',
+      pointBorderColor: '#fff',
+      pointBorderWidth: 2,
+    });
+
+    // Lower bound for confidence interval
+    datasets.push({
+      label: 'Forecast Lower Bound (95% CI)',
+      data: [
+        ...new Array(historicalValues.length - 1).fill(null),
+        lastHistoricalValue, // Connect to last historical point
+        ...forecastLower
+      ],
+      borderColor: 'rgba(239, 68, 68, 0.4)',
+      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+      borderWidth: 1,
+      borderDash: [3, 3],
+      fill: '-1',
+      pointRadius: 0,
+      tension: 0.4,
+    });
+  }
 
   const chartData = {
-    labels,
-    datasets: [
-      {
-        label: 'Gas Production (MCF)',
-        data: dataValues,
-        borderColor: '#992626',
-        backgroundColor: 'rgba(153, 38, 38, 0.1)',
-        tension: 0.4,
-        fill: true,
-        pointRadius: 3,
-        pointHoverRadius: 6,
-        pointBackgroundColor: '#992626',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2,
-      }
-    ]
+    labels: allLabels,
+    datasets: datasets
   };
+
+  // Calculate statistics
+  const totalProduction = historicalValues.reduce((sum, val) => sum + val, 0);
+  const avgProduction = historicalValues.length > 0 ? totalProduction / historicalValues.length : 0;
+  const maxProduction = Math.max(...historicalValues);
+  
+  // Calculate forecast statistics if available
+  let forecastAvg = null;
+  let forecastTotal = null;
+  if (forecastData && forecastData.forecast) {
+    forecastTotal = forecastValues.reduce((sum, val) => sum + val, 0);
+    forecastAvg = forecastValues.length > 0 ? forecastTotal / forecastValues.length : 0;
+  }
 
   const options = {
     responsive: true,
@@ -149,7 +290,11 @@ export default function ProductionChart({ wellId }) {
         displayColors: true,
         callbacks: {
           label: function(context) {
-            return `Production: ${context.parsed.y.toLocaleString()} MCF`;
+            const label = context.dataset.label || '';
+            if (label.includes('Forecast')) {
+              return `${label}: ${context.parsed.y ? context.parsed.y.toLocaleString() : 'N/A'} MCF`;
+            }
+            return `Production: ${context.parsed.y ? context.parsed.y.toLocaleString() : 'N/A'} MCF`;
           }
         }
       }
@@ -191,7 +336,7 @@ export default function ProductionChart({ wellId }) {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h2 className={styles.title}>Production History</h2>
+        <h2 className={styles.title}>Production History & AI Forecast</h2>
         <div className={styles.wellInfo}>
           <span className={styles.infoLabel}>Lease:</span>
           <span className={styles.infoValue}>{productionData.wellInfo.leaseName}</span>
@@ -199,6 +344,24 @@ export default function ProductionChart({ wellId }) {
           <span className={styles.infoLabel}>Well #:</span>
           <span className={styles.infoValue}>{productionData.wellInfo.wellNo}</span>
         </div>
+        {forecastData && forecastData.forecast && (
+          <div className={styles.forecastToggle}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#e5e7eb', fontSize: '14px' }}>
+              <input
+                type="checkbox"
+                checked={showForecast}
+                onChange={(e) => setShowForecast(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <span>Show AI Forecast</span>
+            </label>
+            {forecastData.model_info && (
+              <span style={{ color: '#9ca3af', fontSize: '12px', marginLeft: '16px' }}>
+                Trend: {forecastData.model_info.trend}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className={styles.statsGrid}>
@@ -216,8 +379,24 @@ export default function ProductionChart({ wellId }) {
         </div>
         <div className={styles.statCard}>
           <div className={styles.statLabel}>Data Points</div>
-          <div className={styles.statValue}>{dataValues.length} months</div>
+          <div className={styles.statValue}>{historicalValues.length} months</div>
         </div>
+        {showForecast && forecastData && forecastAvg !== null && (
+          <>
+            <div className={styles.statCard} style={{ borderColor: '#3b82f6' }}>
+              <div className={styles.statLabel}>Forecast Avg (12mo)</div>
+              <div className={styles.statValue} style={{ color: '#3b82f6' }}>
+                {Math.round(forecastAvg).toLocaleString()} MCF
+              </div>
+            </div>
+            <div className={styles.statCard} style={{ borderColor: '#3b82f6' }}>
+              <div className={styles.statLabel}>Forecast Total (12mo)</div>
+              <div className={styles.statValue} style={{ color: '#3b82f6' }}>
+                {Math.round(forecastTotal).toLocaleString()} MCF
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className={styles.chartContainer}>
