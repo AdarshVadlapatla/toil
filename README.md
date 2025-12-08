@@ -1,2 +1,3 @@
 # Toil
-Data Visualization Platform with AI Powered Statistical Inference for Texas Oil Well Investment
+Data Visualization Platform with Statistical Inference for Texas Oil Well Investment
+

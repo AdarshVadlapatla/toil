@@ -227,7 +227,7 @@ export default function ProductionChart({ wellId }) {
       pointBorderWidth: 2,
     });
 
-    // Lower bound for confidence interval
+    // Lower bound for confidence interval - Changed to blue
     datasets.push({
       label: 'Forecast Lower Bound (95% CI)',
       data: [
@@ -235,8 +235,8 @@ export default function ProductionChart({ wellId }) {
         lastHistoricalValue, // Connect to last historical point
         ...forecastLower
       ],
-      borderColor: 'rgba(239, 68, 68, 0.4)',
-      backgroundColor: 'rgba(239, 68, 68, 0.1)',
+      borderColor: 'rgba(59, 130, 246, 0.4)',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
       borderWidth: 1,
       borderDash: [3, 3],
       fill: '-1',
@@ -345,17 +345,17 @@ export default function ProductionChart({ wellId }) {
         </div>
         {forecastData && forecastData.forecast && (
           <div className={styles.forecastToggle}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: '#e5e7eb', fontSize: '14px' }}>
+            <label className={styles.toggleLabel}>
               <input
                 type="checkbox"
                 checked={showForecast}
                 onChange={(e) => setShowForecast(e.target.checked)}
-                style={{ cursor: 'pointer' }}
+                className={styles.toggleCheckbox}
               />
-              <span>Show AI Forecast</span>
+              <span className={styles.toggleText}>Show AI Forecast</span>
             </label>
             {forecastData.model_info && (
-              <span style={{ color: '#9ca3af', fontSize: '12px', marginLeft: '16px' }}>
+              <span className={styles.trendInfo}>
                 Trend: {forecastData.model_info.trend}
               </span>
             )}
@@ -380,23 +380,24 @@ export default function ProductionChart({ wellId }) {
           <div className={styles.statLabel}>Data Points</div>
           <div className={styles.statValue}>{historicalValues.length} months</div>
         </div>
-        {showForecast && forecastData && forecastAvg !== null && (
-          <>
-            <div className={styles.statCard} style={{ borderColor: '#3b82f6' }}>
-              <div className={styles.statLabel}>Forecast Avg (12mo)</div>
-              <div className={styles.statValue} style={{ color: '#3b82f6' }}>
-                {Math.round(forecastAvg).toLocaleString()} MCF
-              </div>
-            </div>
-            <div className={styles.statCard} style={{ borderColor: '#3b82f6' }}>
-              <div className={styles.statLabel}>Forecast Total (12mo)</div>
-              <div className={styles.statValue} style={{ color: '#3b82f6' }}>
-                {Math.round(forecastTotal).toLocaleString()} MCF
-              </div>
-            </div>
-          </>
-        )}
       </div>
+
+      {showForecast && forecastData && forecastAvg !== null && (
+        <div className={styles.forecastStatsGrid}>
+          <div className={styles.statCard} style={{ borderColor: '#3b82f6' }}>
+            <div className={styles.statLabel}>Forecast Avg (12mo)</div>
+            <div className={styles.statValue} style={{ color: '#3b82f6' }}>
+              {Math.round(forecastAvg).toLocaleString()} MCF
+            </div>
+          </div>
+          <div className={styles.statCard} style={{ borderColor: '#3b82f6' }}>
+            <div className={styles.statLabel}>Forecast Total (12mo)</div>
+            <div className={styles.statValue} style={{ color: '#3b82f6' }}>
+              {Math.round(forecastTotal).toLocaleString()} MCF
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={styles.chartContainer}>
         <Line data={chartData} options={options} />
