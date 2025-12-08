@@ -13,6 +13,7 @@ import {
   Filler
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { API_URL, fetchProductionData, fetchForecastData } from './utils/api';
 import styles from './ProductionChart.module.css';
 
 // Register Chart.js components
@@ -36,11 +37,10 @@ export default function ProductionChart({ wellId }) {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchProductionData = async () => {
+    const loadProductionData = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`http://localhost:3001/api/wells/${wellId}/production`);
-        const data = await response.json();
+        const data = await fetchProductionData(wellId);
 
         if (!data.available) {
           setError(data.message || 'Production data is not available for this well at this time.');
@@ -51,7 +51,7 @@ export default function ProductionChart({ wellId }) {
           
           // Fetch forecast data if production data is available
           if (data.available && data.production && data.production.length >= 3) {
-            fetchForecastData();
+            loadForecastData();
           }
         }
       } catch (err) {
@@ -63,11 +63,10 @@ export default function ProductionChart({ wellId }) {
       }
     };
 
-    const fetchForecastData = async () => {
+    const loadForecastData = async () => {
       try {
         setForecastLoading(true);
-        const response = await fetch(`http://localhost:3001/api/wells/${wellId}/forecast?months=12`);
-        const data = await response.json();
+        const data = await fetchForecastData(wellId, 12);
 
         if (data.available) {
           setForecastData(data);
@@ -81,7 +80,7 @@ export default function ProductionChart({ wellId }) {
     };
 
     if (wellId) {
-      fetchProductionData();
+      loadProductionData();
     }
   }, [wellId]);
 

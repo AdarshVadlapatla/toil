@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { searchWells } from './utils/api';
 import styles from './SearchBar.module.css';
 
 export default function SearchBar({ onSelectWell }) {
@@ -34,8 +35,7 @@ export default function SearchBar({ onSelectWell }) {
     setIsSearching(true);
     
     try {
-      const response = await fetch(`http://localhost:3001/api/search?query=${encodeURIComponent(query)}`);
-      const data = await response.json();
+      const data = await searchWells(query);
       
       if (data.results) {
         setSearchResults(data.results);

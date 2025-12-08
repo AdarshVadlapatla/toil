@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { fetchFilterOptions } from './utils/api';
 import styles from './filters.module.css';
 
 export default function Filters({ onApplyFilters }) {
@@ -49,11 +50,10 @@ export default function Filters({ onApplyFilters }) {
 
   // Fetch filter options from server
   useEffect(() => {
-    const fetchOptions = async () => {
+    const loadOptions = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:3001/api/filter-options');
-        const data = await response.json();
+        const data = await fetchFilterOptions();
         
         setOptions({
           counties: data.counties || [],
@@ -68,7 +68,7 @@ export default function Filters({ onApplyFilters }) {
       }
     };
 
-    fetchOptions();
+    loadOptions();
   }, []);
 
   const toggleSection = (section) => {

@@ -3,17 +3,37 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import Supercluster from 'supercluster';
 import { linearRegression, standardDeviation, mean } from 'simple-statistics';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Validate required environment variables
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY) {
+  console.error('ERROR: Missing required environment variables!');
+  console.error('Please ensure SUPABASE_URL and SUPABASE_KEY are set in your .env file');
+  process.exit(1);
+}
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN === '*' 
+    ? '*' 
+    : process.env.CORS_ORIGIN?.split(',').map(origin => origin.trim()) || '*',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Supabase client
-const supabaseUrl = 'https://cybbfiogqisodsytxlnx.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN5YmJmaW9ncWlzb2RzeXR4bG54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE1ODU5MTksImV4cCI6MjA3NzE2MTkxOX0.qVeVI8geTuaO7ovJNV7EVY_ySHkHR7yvL8Oeyv6P4E0';
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 

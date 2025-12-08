@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import { useRouter } from 'next/navigation';
+import { API_URL } from './utils/api';
 import styles from './page.module.css';
 import 'leaflet/dist/leaflet.css';
 
@@ -175,7 +176,7 @@ const Map = forwardRef(({ filters }, ref) => {
           params.append('productionMaxMax', currentFilters.productionMaxMax);
         }
 
-        const response = await fetch(`http://localhost:3001/api/wells?${params}`);
+        const response = await fetch(`${API_URL}/api/wells?${params}`);
         const data = await response.json();
 
         if (data.loading) {
