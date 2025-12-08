@@ -41,7 +41,55 @@
   color: #4a5568;
 }
 
+.forecastToggle {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background-color: #2d3748;
+  border-radius: 0.5rem;
+  border: 1px solid #4a5568;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.toggleCheckbox {
+  cursor: pointer;
+  width: 1rem;
+  height: 1rem;
+  accent-color: #3b82f6;
+}
+
+.toggleText {
+  color: #e5e7eb;
+}
+
+.trendInfo {
+  color: #9ca3af;
+  font-size: 0.75rem;
+  margin-left: auto;
+  padding-left: 1rem;
+  border-left: 1px solid #4a5568;
+}
+
 .statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.forecastStatsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
@@ -135,6 +183,10 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .forecastStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
   .chartContainer {
     height: 300px;
     padding: 1rem;
@@ -146,5 +198,20 @@
 
   .wellInfo {
     font-size: 0.8rem;
+  }
+
+  .forecastToggle {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .trendInfo {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    padding-top: 0.5rem;
+    border-top: 1px solid #4a5568;
+    width: 100%;
   }
 }

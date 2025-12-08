@@ -191,7 +191,7 @@ export default function Filters({ onApplyFilters }) {
               <div className={styles.loadingText}>Loading options...</div>
             ) : (
               <>
-                {/* County Filter - Now Searchable */}
+                {/* County Filter */}
                 <div className={styles.field}>
                   <button 
                     className={styles.dropdownToggle}
@@ -283,16 +283,19 @@ export default function Filters({ onApplyFilters }) {
                   </button>
                   {expandedSections.districts && (
                     <div className={styles.checkboxScrollContainer}>
-                      {options.districts.map(district => (
-                        <label key={district} className={styles.checkbox}>
-                          <input
-                            type="checkbox"
-                            checked={filters.districts.includes(district)}
-                            onChange={() => handleCheckboxChange('districts', district)}
-                          />
-                          District {district}
-                        </label>
-                      ))}
+                      {/* Checkbox List (No Search Input) */}
+                      <div className={styles.checkboxList}>
+                        {options.districts.map(district => (
+                          <label key={district} className={styles.checkbox}>
+                            <input
+                              type="checkbox"
+                              checked={filters.districts.includes(district)}
+                              onChange={() => handleCheckboxChange('districts', district)}
+                            />
+                            District {district}
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -321,7 +324,7 @@ export default function Filters({ onApplyFilters }) {
         
         {expandedSections.attributes && (
           <div className={styles.sectionContent}>
-            {/* Operator Filter - New Searchable */}
+            {/* Operator Filter */}
             <div className={styles.field}>
               <button 
                 className={styles.dropdownToggle}
@@ -392,7 +395,7 @@ export default function Filters({ onApplyFilters }) {
               )}
             </div>
 
-            {/* Field Filter - New Searchable */}
+            {/* Field Filter */}
             <div className={styles.field}>
               <button 
                 className={styles.dropdownToggle}

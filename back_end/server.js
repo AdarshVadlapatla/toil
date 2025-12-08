@@ -187,17 +187,6 @@ async function loadProductionStatistics() {
         
         attemptedMatches++;
         
-        // DEBUG: Log first failed match
-        if (!stats && attemptedMatches <= 3) {
-          console.log(`Failed match for well key: "${key}"`);
-          console.log(`  Looking for this key in statsMap...`);
-          // Check if any similar keys exist
-          const similarKeys = Array.from(statsMap.keys()).filter(k => 
-            k.includes(well.lease_name?.substring(0, 5) || 'XXX')
-          ).slice(0, 3);
-          console.log(`  Similar keys found:`, similarKeys);
-        }
-        
         if (stats) {
           well.production_total = stats.totalProduction;
           well.production_avg = stats.avgProduction;
