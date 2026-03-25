@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { fetchWellDetails } from '../../utils/api';
+import { fetchWellDetails, fetchProductionData, fetchComplianceData } from '../../utils/api';
 import HelpModal from '../../HelpModal';
 import ProductionChart from '@/app/ProductionChart';
+import CompliancePanel from './CompliancePanel';
 import styles from './page.module.css';
 
 export default function WellDetailPage() {
@@ -14,6 +15,84 @@ export default function WellDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    try {
+      setDownloading(true);
+      const productionDataResult = await fetchProductionData(params.id);
+      const complianceDataResult = await fetchComplianceData(params.id);
+
+      let csvContent = "data:text/csv;charset=utf-8,";
+
+      // Well Details Section
+      csvContent += "--- Well Details ---\n";
+      csvContent += `API Number,${well.api_no || well.api || 'N/A'}\n`;
+      csvContent += `Well Number,${well.well_no_display || well.wellid || 'N/A'}\n`;
+      csvContent += `Lease Name,${well.lease_name || 'N/A'}\n`;
+      csvContent += `Operator,${well.operator_name || 'N/A'}\n`;
+      csvContent += `County,${well.county_name || 'N/A'}\n`;
+      csvContent += `District,${well.district_code || 'N/A'}\n`;
+      csvContent += `Well Type,${well.well_type_name || 'N/A'}\n`;
+      csvContent += `Field Name,${well.field_name || 'N/A'}\n`;
+      csvContent += `Total Depth (ft),${well.api_depth || 'N/A'}\n`;
+      csvContent += `Latitude,${well.lat83 || 'N/A'}\n`;
+      csvContent += `Longitude,${well.long83 || 'N/A'}\n`;
+      csvContent += `Completion Date,${well.completion_date || well.orig_completion_dt || 'N/A'}\n`;
+      csvContent += "\n";
+
+      // Production Data Section
+      csvContent += "--- Production Data ---\n";
+      if (!productionDataResult.available) {
+        csvContent += "No production data available for this well.\n";
+      } else {
+        csvContent += "Year/Month,Gas Production (MCF),Well Type Month\n";
+        productionDataResult.production.forEach(row => {
+          csvContent += `${row.year_month},${row.gas_production || 0},${row.well_type_month || ''}\n`;
+        });
+      }
+      csvContent += "\n";
+
+      // Compliance Section
+      csvContent += "--- Compliance & Inspections ---\n";
+      if (!complianceDataResult.available) {
+        csvContent += "No compliance records available for this well.\n";
+      } else {
+        csvContent += `Compliance Status,${complianceDataResult.summary.complianceStatus}\n`;
+        csvContent += `Open Violations,${complianceDataResult.summary.openViolations}\n`;
+        csvContent += `Last Inspected,${complianceDataResult.summary.lastInspected || 'Never'}\n\n`;
+
+        if (complianceDataResult.violations.length > 0) {
+          csvContent += "Violation Date,Rule,Status\n";
+          complianceDataResult.violations.forEach(v => {
+            csvContent += `${v.violation_date},${v.rule_violated},${v.status}\n`;
+          });
+          csvContent += "\n";
+        }
+
+        if (complianceDataResult.inspections.length > 0) {
+          csvContent += "Inspection Date,Type,Status\n";
+          complianceDataResult.inspections.forEach(ins => {
+            csvContent += `${ins.inspection_date},${ins.inspection_type},${ins.compliance_status}\n`;
+          });
+        }
+      }
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `well_${well.api_no || well.api || 'data'}.csv`);
+      document.body.appendChild(link);
+
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error downloading data:', err);
+      alert('Failed to download well data. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     const loadWellDetails = async () => {
@@ -71,8 +150,17 @@ export default function WellDetailPage() {
 
       <main className={styles.main}>
         <div className={styles.titleSection}>
-          <h1 className={styles.apiTitle}>API #{well.api_no || well.api || 'N/A'}</h1>
-          <h2 className={styles.leaseName}>{well.lease_name || 'Unknown Lease'}</h2>
+          <div>
+            <h1 className={styles.apiTitle}>API #{well.api_no || well.api || 'N/A'}</h1>
+            <h2 className={styles.leaseName}>{well.lease_name || 'Unknown Lease'}</h2>
+          </div>
+          <button
+            onClick={handleDownload}
+            className={styles.downloadButton}
+            disabled={downloading}
+          >
+            {downloading ? 'Downloading...' : 'Download Data (CSV)'}
+          </button>
         </div>
 
         <div className={styles.keyMetrics}>
@@ -80,7 +168,7 @@ export default function WellDetailPage() {
             <div className={styles.metricLabel}>Operator</div>
             <div className={styles.metricValue}>
               <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z"/>
+                <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z" />
               </svg>
               {well.operator_name || 'Unknown'}
             </div>
@@ -90,7 +178,7 @@ export default function WellDetailPage() {
             <div className={styles.metricLabel}>County</div>
             <div className={styles.metricValue}>
               <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
               </svg>
               {well.county_name || 'Unknown'}
             </div>
@@ -100,7 +188,7 @@ export default function WellDetailPage() {
             <div className={styles.metricLabel}>District</div>
             <div className={styles.metricValue}>
               <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
               </svg>
               District {well.district_code || 'N/A'}
             </div>
@@ -110,7 +198,7 @@ export default function WellDetailPage() {
             <div className={styles.metricLabel}>Oil or Gas Code</div>
             <div className={styles.metricValue}>
               <svg className={styles.icon} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2 C8 7 6 10 6 14 C6 18.418 8.686 21 12 21 C15.314 21 18 18.418 18 14 C18 10 16 7 12 2 Z"/>
+                <path d="M12 2 C8 7 6 10 6 14 C6 18.418 8.686 21 12 21 C15.314 21 18 18.418 18 14 C18 10 16 7 12 2 Z" />
               </svg>
               {well.oil_gas_code || 'N/A'}
             </div>
@@ -120,7 +208,7 @@ export default function WellDetailPage() {
             <div className={styles.metricLabel}>Well Type</div>
             <div className={styles.metricValue}>
               <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 3a9 9 0 109 9 9.01 9.01 0 00-9-9zm4.3 4.3l-4.6 6.4a1 1 0 01-1.3.3L8 13a1 1 0 01.3-1.7l6.4-4.6a1 1 0 011.6 1.6z"/>
+                <path d="M12 3a9 9 0 109 9 9.01 9.01 0 00-9-9zm4.3 4.3l-4.6 6.4a1 1 0 01-1.3.3L8 13a1 1 0 01.3-1.7l6.4-4.6a1 1 0 011.6 1.6z" />
               </svg>
               {well.well_type_name || 'Unknown'}
             </div>
@@ -129,17 +217,23 @@ export default function WellDetailPage() {
 
         {/* Tab Navigation */}
         <div className={styles.tabNavigation}>
-          <button 
+          <button
             className={`${styles.tab} ${activeTab === 'details' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('details')}
           >
             Well Details
           </button>
-          <button 
+          <button
             className={`${styles.tab} ${activeTab === 'production' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('production')}
           >
             Production Data & Predictions
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === 'compliance' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('compliance')}
+          >
+            Compliance Information
           </button>
         </div>
 
@@ -324,7 +418,13 @@ export default function WellDetailPage() {
 
         {activeTab === 'production' && (
           <div className={styles.sections}>
-              <ProductionChart wellId={params.id} />
+            <ProductionChart wellId={params.id} />
+          </div>
+        )}
+
+        {activeTab === 'compliance' && (
+          <div className={styles.sections}>
+            <CompliancePanel wellId={params.id} />
           </div>
         )}
       </main>

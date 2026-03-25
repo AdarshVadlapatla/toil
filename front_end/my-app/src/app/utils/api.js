@@ -14,7 +14,7 @@ export async function fetchWells(bounds, zoom, filters = {}) {
   });
 
   const response = await fetch(`${API_URL}/api/wells?${params}`);
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
@@ -24,7 +24,7 @@ export async function fetchWells(bounds, zoom, filters = {}) {
 
 export async function fetchWellDetails(id) {
   const response = await fetch(`${API_URL}/api/wells/${id}`);
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
@@ -34,7 +34,7 @@ export async function fetchWellDetails(id) {
 
 export async function fetchStats() {
   const response = await fetch(`${API_URL}/api/wells/stats`);
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
@@ -44,7 +44,7 @@ export async function fetchStats() {
 
 export async function fetchFilterOptions() {
   const response = await fetch(`${API_URL}/api/filter-options`);
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
@@ -54,7 +54,7 @@ export async function fetchFilterOptions() {
 
 export async function searchWells(query) {
   const response = await fetch(`${API_URL}/api/search?query=${encodeURIComponent(query)}`);
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
@@ -64,7 +64,7 @@ export async function searchWells(query) {
 
 export async function fetchProductionData(wellId) {
   const response = await fetch(`${API_URL}/api/wells/${wellId}/production`);
-  
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
@@ -74,7 +74,17 @@ export async function fetchProductionData(wellId) {
 
 export async function fetchForecastData(wellId, months = 12) {
   const response = await fetch(`${API_URL}/api/wells/${wellId}/forecast?months=${months}`);
-  
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+export async function fetchComplianceData(wellId) {
+  const response = await fetch(`${API_URL}/api/wells/${wellId}/compliance`);
+
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
