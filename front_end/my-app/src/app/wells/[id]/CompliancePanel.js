@@ -32,7 +32,7 @@ export default function CompliancePanel({ wellId }) {
         return (
             <div className={styles.noData}>
                 <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <div className={styles.statusBadgeCompliant}>✓ COMPLIANT</div>
+                    <div className={styles.statusBadgeNeutral}>UNASSESSED</div>
                 </div>
                 <p>No recent inspections or violations on record for this well.</p>
             </div>
@@ -42,8 +42,14 @@ export default function CompliancePanel({ wellId }) {
     return (
         <div className={styles.panel}>
             <div className={styles.summaryHeader}>
-                <div className={summary.complianceStatus === 'Compliant' ? styles.statusBadgeCompliant : styles.statusBadgeNonCompliant}>
-                    {summary.complianceStatus === 'Compliant' ? '✓ COMPLIANT' : '⚠ NON-COMPLIANT'}
+                <div className={
+                    summary.complianceStatus === 'Compliant' ? styles.statusBadgeCompliant : 
+                    summary.complianceStatus === 'Unassessed' ? styles.statusBadgeNeutral : 
+                    styles.statusBadgeNonCompliant
+                }>
+                    {summary.complianceStatus === 'Compliant' ? '✓ COMPLIANT' : 
+                     summary.complianceStatus === 'Unassessed' ? 'UNASSESSED' : 
+                     '⚠ NON-COMPLIANT'}
                 </div>
                 <div className={styles.summaryMetrics}>
                     <div className={styles.summaryMetric}>

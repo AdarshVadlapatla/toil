@@ -34,6 +34,16 @@
     border: 1px solid #991b1b;
 }
 
+.statusBadgeNeutral {
+    background-color: #374151;
+    color: #9ca3af;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    border: 1px solid #4b5563;
+}
+
 .summaryMetrics {
     display: flex;
     gap: 2rem;

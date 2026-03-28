@@ -257,6 +257,26 @@
   font-size: 1rem;
 }
 
+.tagActive {
+  background-color: #064e3b;
+  color: #34d399;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.tagInactive {
+  background-color: #7f1d1d;
+  color: #f87171;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
 @media (max-width: 780px) {
   .main {
     padding: 1rem;

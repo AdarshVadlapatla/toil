@@ -138,6 +138,9 @@ const Map = forwardRef(({ filters }, ref) => {
         if (currentFilters.wellType && currentFilters.wellType !== 'all') {
           params.append('wellType', currentFilters.wellType);
         }
+        if (currentFilters.status) {
+          params.append('status', currentFilters.status);
+        }
         if (currentFilters.completionDateStart) {
           params.append('completionDateStart', currentFilters.completionDateStart);
         }
@@ -338,7 +341,10 @@ const Map = forwardRef(({ filters }, ref) => {
         }).addTo(mapInstanceRef.current);
 
         fetch('https://raw.githubusercontent.com/glynnbird/usstatesgeojson/master/texas.geojson')
-          .then(response => response.json())
+          .then(response => {
+            if (!response.ok) throw new Error('HTTP status ' + response.status);
+            return response.json();
+          })
           .then(texasGeoJSON => {
             const texasBorder = L.geoJSON(texasGeoJSON, {
               style: {
@@ -353,15 +359,19 @@ const Map = forwardRef(({ filters }, ref) => {
 
             const bounds = texasBorder.getBounds();
             mapInstanceRef.current.setMaxBounds(bounds.pad(0.1));
-
+          })
+          .catch(error => {
+            console.error('Error loading Texas boundary:', error);
+            // Default fallback max bounds if we can't load the border
+            const fallbackBounds = L.latLngBounds(L.latLng(25.8, -106.6), L.latLng(36.5, -93.5));
+            mapInstanceRef.current.setMaxBounds(fallbackBounds.pad(0.1));
+          })
+          .finally(() => {
             loadWells();
             
             // Attach event listeners
             mapInstanceRef.current.on('zoomend', loadWells);
             mapInstanceRef.current.on('moveend', loadWells);
-          })
-          .catch(error => {
-            console.error('Error loading Texas boundary:', error);
           });
       });
     }
@@ -383,6 +393,7 @@ const Map = forwardRef(({ filters }, ref) => {
   const hasFilters = filters.counties?.length > 0 || filters.districts?.length > 0 || 
                    filters.operators?.length > 0 || filters.fields?.length > 0 ||
                    (filters.wellType && filters.wellType !== 'all') ||
+                   (filters.status && filters.status !== 'all') ||
                    filters.completionDateStart || filters.completionDateEnd ||
                    filters.depthMin || filters.depthMax ||
                    filters.productionTotalMin || filters.productionTotalMax ||

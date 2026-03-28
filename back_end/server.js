@@ -41,44 +41,111 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 let wellsCache = null;
 let wellsWithDetailsCache = null;
 let superclusterIndex = null;
+let superclusterIndexActive = null;
+let superclusterIndexInactive = null;
 let cacheLoadTime = null;
 let filterOptions = null;
+let activeWellIds = new Set();
+let globalApiToDetails = {}; // Global lookup map for instant searching and filtering
+
+// Utility for fast keyset pagination
+async function fetchKeysetPaginated(tableName, selectStr, orderColumn, batchSize = 1000) {
+  let allData = [];
+  let lastVal = null;
+  console.log(`Starting keyset fetch from ${tableName} ordering by ${orderColumn}...`);
+
+  while (true) {
+    let query = supabase
+      .from(tableName)
+      .select(selectStr)
+      .order(orderColumn, { ascending: true })
+      .limit(batchSize);
+
+    if (lastVal !== null) {
+      query = query.gt(orderColumn, lastVal);
+    }
+
+    const { data, error } = await query;
+    
+    if (error) {
+      console.error(`Error keyset fetching from ${tableName}:`, error);
+      throw error;
+    }
+    
+    if (!data || data.length === 0) break;
+    
+    allData = allData.concat(data);
+    lastVal = data[data.length - 1][orderColumn];
+
+    if (allData.length % 50000 === 0) {
+      console.log(`Loaded ${allData.length} records from ${tableName} so far...`);
+    }
+
+    if (data.length < batchSize) break;
+  }
+  
+  return allData;
+}
+
+// Utility for concurrent fetching
+async function fetchConcurrentBatches(tableName, selectStr, concurrency = 5, batchSize = 1000) {
+  let allData = [];
+  let start = 0;
+  
+  while (true) {
+    const promises = [];
+    for (let i = 0; i < concurrency; i++) {
+      const batchStart = start + (i * batchSize);
+      const batchEnd = batchStart + batchSize - 1;
+      promises.push(
+        supabase
+          .from(tableName)
+          .select(selectStr)
+          .range(batchStart, batchEnd)
+      );
+    }
+    
+    const results = await Promise.all(promises);
+    let hasMore = true;
+    
+    for (const { data, error } of results) {
+      if (error) {
+        console.error(`Error fetching from ${tableName}:`, error);
+        throw error;
+      }
+      if (!data || data.length === 0) {
+        hasMore = false;
+        continue;
+      }
+      allData = allData.concat(data);
+      if (data.length < batchSize) {
+        hasMore = false;
+      }
+    }
+    
+    console.log(`Loaded ${allData.length} records from ${tableName} so far...`);
+    
+    if (!hasMore) break;
+    start += batchSize * concurrency;
+  }
+  
+  return allData;
+}
 
 // Function to load all wells into memory
 async function loadAllWells() {
   console.log('Starting to load all wells into memory...');
   const startTime = Date.now();
 
-  const BATCH_SIZE = 1000;
-  let wells = [];
-  let start = 0;
-
-  while (true) {
-    const end = start + BATCH_SIZE - 1;
-
-    const { data: batch, error } = await supabase
-      .from('filtered_well_locations')
-      .select('surface_id, api, wellid, lat83, long83')
-      .range(start, end);
-
-    if (error) {
-      console.error('Error fetching wells batch:', error);
-      throw error;
-    }
-
-    if (!batch || batch.length === 0) {
-      break;
-    }
-
-    wells = wells.concat(batch);
-    console.log(`Loaded ${wells.length} wells so far...`);
-
-    start += BATCH_SIZE;
-  }
+  let wells = await fetchKeysetPaginated('well_locations', 'surface_id, api, wellid, lat83, long83', 'surface_id');
 
   const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
   console.log(`All wells loaded! Total: ${wells.length} wells in ${loadTime} seconds`);
 
+  wells.forEach(well => {
+    well.isActive = activeWellIds.has(well.surface_id);
+  });
+  
   wellsCache = wells;
   cacheLoadTime = new Date();
 
@@ -87,35 +154,18 @@ async function loadAllWells() {
 
 async function loadWellDetails() {
   console.log('Loading well details for filtering...');
-  const BATCH_SIZE = 1000;
-  let wellDetails = [];
-  let start = 0;
-
-  while (true) {
-    const end = start + BATCH_SIZE - 1;
-
-    const { data: batch, error } = await supabase
-      .from('filtered_well_information')
-      .select('api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name') // Added well_no and county_code
-      .range(start, end);
-
-    if (error) {
-      console.error('Error fetching well details batch:', error);
-      throw error;
-    }
-
-    if (!batch || batch.length === 0) {
-      break;
-    }
-
-    wellDetails = wellDetails.concat(batch);
-    console.log(`Loaded ${wellDetails.length} well details so far...`);
-
-    start += BATCH_SIZE;
-  }
+  let wellDetails = await fetchKeysetPaginated('well_information', 'api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name', 'api_no');
 
   console.log(`Well details loaded! Total: ${wellDetails.length}`);
   wellsWithDetailsCache = wellDetails;
+
+  // Build the global fast-lookup map ONCE at startup
+  const apiMap = {};
+  wellDetails.forEach(detail => {
+    if (detail.api_no) apiMap[String(detail.api_no)] = detail;
+  });
+  globalApiToDetails = apiMap;
+  console.log(`Built global API lookup map with ${Object.keys(globalApiToDetails).length} entries`);
 
   // Extract unique filter options
   const counties = [...new Set(wellDetails.map(w => w.county_name).filter(Boolean))].sort();
@@ -135,33 +185,7 @@ async function loadProductionStatistics() {
   const startTime = Date.now();
 
   try {
-    const BATCH_SIZE = 1000;
-    let allStats = [];
-    let start = 0;
-
-    // Batch-fetch from the materialized view
-    while (true) {
-      const end = start + BATCH_SIZE - 1;
-
-      const { data: batch, error } = await supabase
-        .from('well_production_summary')
-        .select('lease_name, well_no, county_code, total_production, avg_production, max_production')
-        .range(start, end);
-
-      if (error) {
-        console.error('Error fetching production stats batch:', error);
-        throw error;
-      }
-
-      if (!batch || batch.length === 0) {
-        break;
-      }
-
-      allStats = allStats.concat(batch);
-      console.log(`Loaded ${allStats.length} production statistics so far...`);
-
-      start += BATCH_SIZE;
-    }
+    let allStats = await fetchConcurrentBatches('well_production_summary', 'lease_name, well_no, county_code, total_production, avg_production, max_production');
 
     console.log(`Total production statistics loaded: ${allStats.length}`);
 
@@ -256,7 +280,19 @@ function createSuperclusterIndex(wells) {
 async function initializeSupercluster() {
   if (wellsCache) {
     superclusterIndex = createSuperclusterIndex(wellsCache);
+    const activeWells = wellsCache.filter(w => w.isActive);
+    superclusterIndexActive = createSuperclusterIndex(activeWells);
+    const inactiveWells = wellsCache.filter(w => !w.isActive);
+    superclusterIndexInactive = createSuperclusterIndex(inactiveWells);
   }
+}
+
+async function loadActiveWellIds() {
+  console.log('Loading active well IDs...');
+  activeWellIds = new Set();
+  const activeLocations = await fetchKeysetPaginated('filtered_well_locations', 'surface_id', 'surface_id');
+  activeLocations.forEach(row => activeWellIds.add(row.surface_id));
+  console.log(`Loaded ${activeWellIds.size} active well IDs`);
 }
 
 // GET /api/filter-options - Get available filter options
@@ -279,7 +315,7 @@ app.get('/api/filter-options', async (req, res) => {
 // GET /api/wells - Get wells with clustering and optional filtering
 app.get('/api/wells', async (req, res) => {
   try {
-    const { zoom, minLat, maxLat, minLon, maxLon, counties, districts, operators, fields, wellType, completionDateStart, completionDateEnd, depthMin, depthMax, productionTotalMin, productionTotalMax, productionAvgMin, productionAvgMax, productionMaxMin, productionMaxMax } = req.query;
+    const { zoom, minLat, maxLat, minLon, maxLon, counties, districts, operators, fields, wellType, completionDateStart, completionDateEnd, depthMin, depthMax, productionTotalMin, productionTotalMax, productionAvgMin, productionAvgMax, productionMaxMin, productionMaxMax, status } = req.query;
 
     if (!zoom || !minLat || !maxLat || !minLon || !maxLon) {
       return res
@@ -312,7 +348,9 @@ app.get('/api/wells', async (req, res) => {
     const prodMaxMin = productionMaxMin ? parseFloat(productionMaxMin) : null;
     const prodMaxMax = productionMaxMax ? parseFloat(productionMaxMax) : null;
 
-    const hasFilters = countyFilter.length > 0 || districtFilter.length > 0 ||
+    const statusFilter = status || 'active'; // Default to active
+
+    const hasOtherFilters = countyFilter.length > 0 || districtFilter.length > 0 ||
       operatorFilter.length > 0 || fieldFilter.length > 0 ||
       wellTypeFilter || dateStart || dateEnd ||
       minDepth !== null || maxDepth !== null ||
@@ -321,11 +359,11 @@ app.get('/api/wells', async (req, res) => {
       prodMaxMin !== null || prodMaxMax !== null;
 
 
-    let filteredWells = wellsCache;
-    let indexToUse = superclusterIndex;
+    let filteredWells = statusFilter === 'active' ? wellsCache.filter(w => w.isActive) : statusFilter === 'inactive' ? wellsCache.filter(w => !w.isActive) : wellsCache;
+    let indexToUse = statusFilter === 'active' ? superclusterIndexActive : statusFilter === 'all' ? superclusterIndex : superclusterIndexInactive;
 
     // Apply filters if any are provided
-    if (hasFilters) {
+    if (hasOtherFilters) {
       console.log('Applying filters:', {
         counties: countyFilter.length,
         districts: districtFilter.length,
@@ -336,20 +374,16 @@ app.get('/api/wells', async (req, res) => {
         fields: fieldFilter.length
       });
 
-      // Create a map of API to well details for fast lookup
-      const apiToDetails = {};
-      wellsWithDetailsCache.forEach(detail => {
-        if (detail.api_no) {
-          apiToDetails[detail.api_no] = detail;
-        }
-      });
-
+      // Use the globally cached lookup map
       // Filter wells based on criteria
       filteredWells = wellsCache.filter(well => {
-        const details = apiToDetails[well.api];
+        const details = globalApiToDetails[String(well.api)];
         if (!details) return false;
 
         let matches = true;
+
+        if (statusFilter === 'active' && !well.isActive) matches = false;
+        if (statusFilter === 'inactive' && well.isActive) matches = false;
 
         // County filter
         if (countyFilter.length > 0) {
@@ -497,7 +531,7 @@ app.get('/api/wells', async (req, res) => {
         totalAll: wellsCache.length,
         zoom: zoomLevel,
         clustered: true,
-        filtered: hasFilters,
+        filtered: hasOtherFilters,
         cacheLoaded: cacheLoadTime ? cacheLoadTime.toISOString() : null
       }
     });
@@ -648,24 +682,31 @@ app.get('/api/wells/:id/production', async (req, res) => {
 
     // Get well details for matching
     const { data: wellData, error: wellError } = await supabase
-      .from('filtered_well_information')
+      .from('well_information')
       .select('lease_name, well_no, county_code, district_code, oil_gas_code')
       .eq('api_no', locationData.api)
       .maybeSingle();
 
     if (wellError || !wellData) {
-      return res.status(404).json({
-        error: 'Well details not found',
-        available: false
+      return res.json({
+        available: false,
+        reason: 'no_details',
+        message: 'No production data available for this well.'
       });
     }
 
     // Check if this is a gas well
-    if (wellData.oil_gas_code !== 'G') {
+    if (wellData.oil_gas_code === 'O') {
       return res.json({
         available: false,
         reason: 'oil_well',
         message: 'Production data is only available for gas wells at this time.'
+      });
+    } else if (wellData.oil_gas_code !== 'G') {
+      return res.json({
+        available: false,
+        reason: 'no_details',
+        message: 'No production data available for this well.'
       });
     }
 
@@ -742,24 +783,31 @@ app.get('/api/wells/:id/forecast', async (req, res) => {
 
     // Get well details for matching
     const { data: wellData, error: wellError } = await supabase
-      .from('filtered_well_information')
+      .from('well_information')
       .select('lease_name, well_no, county_code, district_code, oil_gas_code')
       .eq('api_no', locationData.api)
       .maybeSingle();
 
     if (wellError || !wellData) {
-      return res.status(404).json({
-        error: 'Well details not found',
-        available: false
+      return res.json({
+        available: false,
+        reason: 'no_details',
+        message: 'No forecasting data available for this well.'
       });
     }
 
     // Check if this is a gas well
-    if (wellData.oil_gas_code !== 'G') {
+    if (wellData.oil_gas_code === 'O') {
       return res.json({
         available: false,
         reason: 'oil_well',
         message: 'Forecasting is only available for gas wells at this time.'
+      });
+    } else if (wellData.oil_gas_code !== 'G') {
+      return res.json({
+        available: false,
+        reason: 'no_details',
+        message: 'No forecasting data available for this well.'
       });
     }
 
@@ -845,10 +893,10 @@ app.get('/api/wells/:id', async (req, res) => {
     let detailError = null;
 
     if (locationData.api) {
-      console.log(`Querying filtered_well_information for API: ${locationData.api}`);
+      console.log(`Querying well_information for API: ${locationData.api}`);
 
       const result = await supabase
-        .from('filtered_well_information')
+        .from('well_information')
         .select('*')
         .eq('api_no', locationData.api)
         .maybeSingle();
@@ -869,13 +917,19 @@ app.get('/api/wells/:id', async (req, res) => {
       console.log(`No detailed info found for API: ${locationData.api}`);
       return res.json({
         ...locationData,
+        isActive: activeWellIds.has(parseInt(id)),
         detailsAvailable: false
       });
     }
 
+    const wellTypeName = detailData.oil_gas_code === 'O' ? 'Oil' : 
+                         detailData.oil_gas_code === 'G' ? 'Gas' : 'Unknown';
+
     res.json({
       ...locationData,
+      isActive: activeWellIds.has(parseInt(id)),
       ...detailData,
+      well_type_name: wellTypeName,
       detailsAvailable: true
     });
 
@@ -952,7 +1006,8 @@ app.get('/api/wells/:id/compliance', async (req, res) => {
           v.status?.toLowerCase().includes('referred') ||
           v.status?.toLowerCase().includes('order')
         ).length,
-        complianceStatus: (safeViolations.some(v => 
+        complianceStatus: (safeInspections.length === 0 && safeViolations.length === 0) ? 'Unassessed' : 
+                          (safeViolations.some(v => 
           v.status?.toLowerCase().includes('open') || 
           v.status?.toLowerCase().includes('active') ||
           v.status?.toLowerCase().includes('referred') ||
@@ -989,14 +1044,7 @@ app.get('/api/search', async (req, res) => {
 
     const searchTerm = query.toLowerCase().trim();
 
-    // Create a map of API to well details for fast lookup
-    const apiToDetails = {};
-    wellsWithDetailsCache.forEach(detail => {
-      if (detail.api_no) {
-        apiToDetails[detail.api_no] = detail;
-      }
-    });
-
+    // Use the global map instead of recreating it
     // Search through wells and collect matches
     const matches = [];
     const maxResults = 10;
@@ -1006,7 +1054,7 @@ app.get('/api/search', async (req, res) => {
     for (const well of wellsCache) {
       if (matches.length >= maxResults) break;
 
-      const details = apiToDetails[well.api];
+      const details = globalApiToDetails[String(well.api)];
       if (!details) {
         if (well.surface_id === 157334) console.log(`[DEBUG] Missing details for 157334, API: ${well.api}`);
         continue;
@@ -1072,6 +1120,7 @@ app.get('/api/stats', async (req, res) => {
 app.post('/api/cache/reload', async (req, res) => {
   try {
     console.log('Manual cache reload requested...');
+    await loadActiveWellIds();
     await loadAllWells();
     await loadWellDetails();
     await loadProductionStatistics();
@@ -1106,6 +1155,7 @@ app.listen(PORT, async () => {
   console.log(`Supabase URL: ${supabaseUrl}`);
 
   try {
+    await loadActiveWellIds();
     await loadAllWells();
     await loadWellDetails();
     await loadProductionStatistics();

@@ -205,12 +205,14 @@ export default function WellDetailPage() {
           </div>
 
           <div className={styles.metric}>
-            <div className={styles.metricLabel}>Well Type</div>
+            <div className={styles.metricLabel}>Well Status</div>
             <div className={styles.metricValue}>
               <svg className={styles.icon} viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 3a9 9 0 109 9 9.01 9.01 0 00-9-9zm4.3 4.3l-4.6 6.4a1 1 0 01-1.3.3L8 13a1 1 0 01.3-1.7l6.4-4.6a1 1 0 011.6 1.6z" />
               </svg>
-              {well.well_type_name || 'Unknown'}
+              <span className={well.isActive ? styles.tagActive : styles.tagInactive}>
+                {well.isActive ? 'ACTIVE' : 'INACTIVE'}
+              </span>
             </div>
           </div>
         </div>

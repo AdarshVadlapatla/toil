@@ -11,6 +11,7 @@ export default function Filters({ onApplyFilters }) {
     operators: [],
     fields: [],
     wellType: 'all',
+    status: 'active',
     completionDateStart: '',
     completionDateEnd: '',
     depthMin: '',
@@ -106,6 +107,7 @@ export default function Filters({ onApplyFilters }) {
       operators: [],
       fields: [],
       wellType: 'all',
+      status: 'active',
       completionDateStart: '',
       completionDateEnd: '',
       depthMin: '',
@@ -132,6 +134,7 @@ export default function Filters({ onApplyFilters }) {
         operators: [],
         fields: [],
         wellType: 'all',
+        status: 'active',
         completionDateStart: '',
         completionDateEnd: '',
         depthMin: '',
@@ -464,6 +467,43 @@ export default function Filters({ onApplyFilters }) {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Well Status Filter */}
+            <div className={styles.field}>
+              <label className={styles.label}>Well Status</label>
+              <div className={styles.radioGroup}>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="status"
+                    value="active"
+                    checked={filters.status === 'active'}
+                    onChange={(e) => handleInputChange('status', e.target.value)}
+                  />
+                  Active
+                </label>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="status"
+                    value="inactive"
+                    checked={filters.status === 'inactive'}
+                    onChange={(e) => handleInputChange('status', e.target.value)}
+                  />
+                  Inactive
+                </label>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    name="status"
+                    value="all"
+                    checked={filters.status === 'all'}
+                    onChange={(e) => handleInputChange('status', e.target.value)}
+                  />
+                  All
+                </label>
+              </div>
             </div>
 
             {/* Well Type Filter */}
