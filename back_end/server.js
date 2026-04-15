@@ -158,7 +158,7 @@ async function loadAllWells() {
 
 async function loadWellDetails() {
   console.log('Loading well details for filtering (Memory Optimized)...');
-  // Only fetch the 10 absolute essential columns for search and filtering
+  
   let wellDetails = await fetchKeysetPaginated(
     'well_information', 
     'api_no, county_name, district_code, oil_gas_code, completion_date, api_depth, lease_name, operator_name, field_name, plug_date',
