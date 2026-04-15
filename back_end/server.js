@@ -37,16 +37,20 @@ const supabaseKey = process.env.SUPABASE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// In-memory cache for wells
+// In-memory cache for wells (minimal data for clustering)
 let wellsCache = null;
-let wellsWithDetailsCache = null;
 let superclusterIndex = null;
 let superclusterIndexActive = null;
 let superclusterIndexInactive = null;
 let cacheLoadTime = null;
 let filterOptions = null;
 let activeWellIds = new Set();
-let globalApiToDetails = {}; // Global lookup map for instant searching and filtering
+let tceqDataCache = null; // New cache for official contamination cases
+let activeWellsCount = 0;
+let inactiveWellsCount = 0;
+let wellsWithDetailsCache = null;   // Enhanced Search: Memory-optimized metadata cache
+let globalApiToDetails = null;      // Enhanced Search: Fast lookup map (API -> Details)
+let productionStatsCache = null;    // Future Analytics cache
 
 // Utility for fast keyset pagination
 async function fetchKeysetPaginated(tableName, selectStr, orderColumn, batchSize = 1000) {
@@ -153,8 +157,13 @@ async function loadAllWells() {
 }
 
 async function loadWellDetails() {
-  console.log('Loading well details for filtering...');
-  let wellDetails = await fetchKeysetPaginated('well_information', 'api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name','plug_date', 'api_no');
+  console.log('Loading well details for filtering (Memory Optimized)...');
+  // Only fetch the 10 absolute essential columns for search and filtering
+  let wellDetails = await fetchKeysetPaginated(
+    'well_information', 
+    'api_no, county_name, district_code, oil_gas_code, completion_date, api_depth, lease_name, operator_name, field_name, plug_date',
+    'api_no'
+  );
 
   console.log(`Well details loaded! Total: ${wellDetails.length}`);
   wellsWithDetailsCache = wellDetails;
@@ -167,7 +176,7 @@ async function loadWellDetails() {
   globalApiToDetails = apiMap;
   console.log(`Built global API lookup map with ${Object.keys(globalApiToDetails).length} entries`);
 
-  // Extract unique filter options
+  // Extract unique filter options from the loaded data (no extra DB calls needed)
   const counties = [...new Set(wellDetails.map(w => w.county_name).filter(Boolean))].sort();
   const districts = [...new Set(wellDetails.map(w => w.district_code).filter(Boolean))].sort();
   const operators = [...new Set(wellDetails.map(w => w.operator_name).filter(Boolean))].sort();
@@ -179,69 +188,31 @@ async function loadWellDetails() {
   return wellDetails;
 }
 
-// Function to calculate production statistics using materialized view
-async function loadProductionStatistics() {
-  console.log('Loading production statistics from materialized view...');
-  const startTime = Date.now();
-
+// Load official TCEQ contamination data from their public ArcGIS API
+async function loadTCEQData() {
+  console.log('Fetching official TCEQ Groundwater Contamination cases...');
   try {
-    let allStats = await fetchConcurrentBatches('well_production_summary', 'lease_name, well_no, county_code, total_production, avg_production, max_production');
-
-    console.log(`Total production statistics loaded: ${allStats.length}`);
-
-    // Create a map for fast lookup
-    const statsMap = new Map();
-    allStats.forEach(stat => {
-      const key = `${stat.lease_name}|${stat.well_no}|${stat.county_code}`;
-      statsMap.set(key, {
-        totalProduction: parseFloat(stat.total_production) || 0,
-        avgProduction: Math.round(parseFloat(stat.avg_production)) || 0,
-        maxProduction: parseInt(stat.max_production) || 0
-      });
-    });
-
-    // Match statistics to wells in wellsWithDetailsCache
-    if (wellsWithDetailsCache) {
-      let matchedCount = 0;
-      let attemptedMatches = 0;
-
-      wellsWithDetailsCache.forEach(well => {
-        const key = `${well.lease_name}|${well.well_no}|${well.county_code}`;
-        const stats = statsMap.get(key);
-
-        attemptedMatches++;
-
-        if (stats) {
-          well.production_total = stats.totalProduction;
-          well.production_avg = stats.avgProduction;
-          well.production_max = stats.maxProduction;
-          matchedCount++;
-
-        } else {
-          // No production data found (oil well or no data)
-          well.production_total = 0;
-          well.production_avg = 0;
-          well.production_max = 0;
-        }
-      });
-
-      console.log(`Production statistics matched: ${matchedCount} wells with data, ${wellsWithDetailsCache.length - matchedCount} without data`);
+    const url = 'https://gisweb.tceq.texas.gov/arcgis/rest/services/GW/GW_Contam_Viewer_PRD/MapServer/23/query?where=1%3D1&outFields=COUNTY,FILE_NAME,CONTAMINANTS,LATITUDE,LONGITUDE&f=geojson';
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    
+    const data = await response.json();
+    
+    if (data && data.features) {
+      tceqDataCache = data.features.map(f => ({
+        lat: f.geometry.coordinates[1],
+        lng: f.geometry.coordinates[0],
+        county: f.properties.COUNTY,
+        fileName: f.properties.FILE_NAME,
+        contaminants: f.properties.CONTAMINANTS,
+        intensity: 1 // Single point per case for clean density view
+      }));
+      console.log(`Successfully loaded ${tceqDataCache.length} official TCEQ contamination cases.`);
     }
-
-    const loadTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`Production statistics loaded in ${loadTime} seconds`);
-
   } catch (error) {
-    console.error('Failed to load production statistics:', error);
-    // Set all wells to 0 production if error
-    if (wellsWithDetailsCache) {
-      wellsWithDetailsCache.forEach(well => {
-        well.production_total = 0;
-        well.production_avg = 0;
-        well.production_max = 0;
-      });
-    }
-    console.log('Production statistics set to 0 for all wells due to error');
+    console.error('Error loading official TCEQ data:', error.message);
+    tceqDataCache = []; // Fallback to empty
   }
 }
 
@@ -276,13 +247,16 @@ function createSuperclusterIndex(wells) {
   return index;
 }
 
-// Initialize supercluster with all wells
 async function initializeSupercluster() {
   if (wellsCache) {
     superclusterIndex = createSuperclusterIndex(wellsCache);
+    
     const activeWells = wellsCache.filter(w => w.isActive);
+    activeWellsCount = activeWells.length;
     superclusterIndexActive = createSuperclusterIndex(activeWells);
+    
     const inactiveWells = wellsCache.filter(w => !w.isActive);
+    inactiveWellsCount = inactiveWells.length;
     superclusterIndexInactive = createSuperclusterIndex(inactiveWells);
   }
 }
@@ -323,10 +297,10 @@ app.get('/api/wells', async (req, res) => {
         .json({ error: 'zoom, minLat, maxLat, minLon, maxLon are required' });
     }
 
-    // Check if cache is loaded
-    if (!wellsCache || !wellsWithDetailsCache) {
+    // Check if cache is loaded (only wellsCache is now required for basic map)
+    if (!wellsCache) {
       return res.status(503).json({
-        error: 'Wells data is still loading. Please try again in a moment.',
+        error: 'Wells database cache is still loading. Please try again in a moment.',
         loading: true
       });
     }
@@ -359,127 +333,54 @@ app.get('/api/wells', async (req, res) => {
       prodMaxMin !== null || prodMaxMax !== null;
 
 
-    let filteredWells = statusFilter === 'active' ? wellsCache.filter(w => w.isActive) : statusFilter === 'inactive' ? wellsCache.filter(w => !w.isActive) : wellsCache;
+    let filteredWells = null;
     let indexToUse = statusFilter === 'active' ? superclusterIndexActive : statusFilter === 'all' ? superclusterIndex : superclusterIndexInactive;
 
-    // Apply filters if any are provided
+    // Apply filters if any are provided (Database-backed)
     if (hasOtherFilters) {
-      console.log('Applying filters:', {
-        counties: countyFilter.length,
-        districts: districtFilter.length,
-        wellType: wellTypeFilter,
-        dateRange: dateStart || dateEnd ? `${dateStart} to ${dateEnd}` : 'none',
-        depthRange: minDepth !== null || maxDepth !== null ? `${minDepth} to ${maxDepth}` : 'none',
-        operators: operatorFilter.length,
-        fields: fieldFilter.length
-      });
+      console.log(`Applying DB-backed filters. Status: ${statusFilter}`);
+      
+      try {
+        // 1. Build a Supabase query to get ONLY the API numbers that match filters
+        // This is much faster and uses 0 Node.js memory
+        let query = supabase.from('well_information').select('api_no');
 
-      // Use the globally cached lookup map
-      // Filter wells based on criteria
-      filteredWells = wellsCache.filter(well => {
-        const details = globalApiToDetails[String(well.api)];
-        if (!details) return false;
+        if (countyFilter.length > 0) query = query.in('county_name', countyFilter);
+        if (districtFilter.length > 0) query = query.in('district_code', districtFilter);
+        if (operatorFilter.length > 0) query = query.in('operator_name', operatorFilter);
+        if (fieldFilter.length > 0) query = query.in('field_name', fieldFilter);
+        if (wellTypeFilter) query = query.eq('oil_gas_code', wellTypeFilter);
+        if (dateStart) query = query.gte('completion_date', dateStart);
+        if (dateEnd) query = query.lte('completion_date', dateEnd);
 
-        let matches = true;
+        const { data: matchedApis, error } = await query.limit(10000);
 
-        if (statusFilter === 'active' && !well.isActive) matches = false;
-        if (statusFilter === 'inactive' && well.isActive) matches = false;
+        if (error) {
+          console.error('Error fetching filtered APIs:', error);
+        } else if (matchedApis) {
+          const apiSet = new Set(matchedApis.map(a => String(a.api_no).padStart(8, '0')));
+          
+          // 2. Filter the in-memory coordinate cache by these APIs
+          filteredWells = wellsCache.filter(well => {
+            let matches = apiSet.has(well.api);
+            if (statusFilter === 'active' && !well.isActive) matches = matches && false; // Wait, logic below
+            if (statusFilter === 'inactive' && well.isActive) matches = matches && false;
+            return matches;
+          });
+          
+          // Refine status filtering on memory cache
+          if (statusFilter === 'active') filteredWells = filteredWells.filter(w => w.isActive);
+          else if (statusFilter === 'inactive') filteredWells = filteredWells.filter(w => !w.isActive);
 
-        // County filter
-        if (countyFilter.length > 0) {
-          matches = matches && countyFilter.includes(details.county_name);
+          console.log(`Filtered down to ${filteredWells.length} wells via DB join.`);
+          // 3. Create a temporary supercluster index for these filtered results
+          indexToUse = createSuperclusterIndex(filteredWells);
         }
-
-        // District filter
-        if (districtFilter.length > 0) {
-          matches = matches && districtFilter.includes(details.district_code);
-        }
-
-        // Well type filter
-        if (wellTypeFilter) {
-          matches = matches && details.oil_gas_code === wellTypeFilter;
-        }
-
-        // Completion date range filter
-        if (dateStart || dateEnd) {
-          const completionDate = details.completion_date;
-          if (!completionDate) return false;
-
-          if (dateStart && completionDate < dateStart) {
-            matches = false;
-          }
-          if (dateEnd && completionDate > dateEnd) {
-            matches = false;
-          }
-        }
-
-        // Depth range filter
-        if (minDepth !== null || maxDepth !== null) {
-          const depth = parseFloat(details.api_depth);
-          if (isNaN(depth)) return false;
-
-          if (minDepth !== null && depth < minDepth) {
-            matches = false;
-          }
-          if (maxDepth !== null && depth > maxDepth) {
-            matches = false;
-          }
-        }
-
-        // Operator filter
-        if (operatorFilter.length > 0) {
-          matches = matches && operatorFilter.includes(details.operator_name);
-        }
-
-        // Field filter
-        if (fieldFilter.length > 0) {
-          matches = matches && fieldFilter.includes(details.field_name);
-        }
-
-        // Total production filter
-        if (prodTotalMin !== null || prodTotalMax !== null) {
-          const totalProd = details.production_total || 0;
-
-          if (prodTotalMin !== null && totalProd < prodTotalMin) {
-            matches = false;
-          }
-          if (prodTotalMax !== null && totalProd > prodTotalMax) {
-            matches = false;
-          }
-        }
-
-        // Average production filter
-        if (prodAvgMin !== null || prodAvgMax !== null) {
-          const avgProd = details.production_avg || 0;
-
-          if (prodAvgMin !== null && avgProd < prodAvgMin) {
-            matches = false;
-          }
-          if (prodAvgMax !== null && avgProd > prodAvgMax) {
-            matches = false;
-          }
-        }
-
-        // Max production filter
-        if (prodMaxMin !== null || prodMaxMax !== null) {
-          const maxProd = details.production_max || 0;
-
-          if (prodMaxMin !== null && maxProd < prodMaxMin) {
-            matches = false;
-          }
-          if (prodMaxMax !== null && maxProd > prodMaxMax) {
-            matches = false;
-          }
-        }
-
-        return matches;
-      });
-
-      console.log(`Filtered down to ${filteredWells.length} wells`);
-
-      // Create a new supercluster index for filtered results
-      indexToUse = createSuperclusterIndex(filteredWells);
+      } catch (e) {
+        console.error('Unexpected error in DB filtering:', e);
+      }
     }
+
 
     const bbox = [
       parseFloat(minLon),
@@ -527,7 +428,7 @@ app.get('/api/wells', async (req, res) => {
       features,
       meta: {
         total: features.length,
-        totalFiltered: filteredWells.length,
+        totalFiltered: filteredWells ? filteredWells.length : (statusFilter === 'active' ? activeWellsCount : statusFilter === 'inactive' ? inactiveWellsCount : wellsCache.length),
         totalAll: wellsCache.length,
         zoom: zoomLevel,
         clustered: true,
@@ -537,8 +438,11 @@ app.get('/api/wells', async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error in /api/wells:', err);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      meta: { total: 0, totalFiltered: 0, totalAll: wellsCache ? wellsCache.length : 0 }
+    });
   }
 });
 
@@ -1025,7 +929,7 @@ app.get('/api/wells/:id/compliance', async (req, res) => {
   }
 });
 
-// GET /api/search - Search wells with autocomplete
+// GET /api/search - Search wells with autocomplete (using Supabase index)
 app.get('/api/search', async (req, res) => {
   try {
     const { query } = req.query;
@@ -1034,7 +938,7 @@ app.get('/api/search', async (req, res) => {
       return res.json({ results: [] });
     }
 
-    if (!wellsCache || !wellsWithDetailsCache) {
+    if (!wellsCache || !globalApiToDetails) {
       return res.status(503).json({
         error: 'Wells data is still loading. Please try again in a moment.',
         loading: true
@@ -1046,8 +950,6 @@ app.get('/api/search', async (req, res) => {
     const maxResults = 10;
     const seenApis = new Set();
 
-    console.log(`Searching for "${searchTerm}"...`);
-
     // First: search normal wells that have location data
     for (const well of wellsCache) {
       if (matches.length >= maxResults) break;
@@ -1056,14 +958,13 @@ app.get('/api/search', async (req, res) => {
       if (!details) continue;
 
       const apiMatch = String(well.api || '').toLowerCase().includes(searchTerm);
-      const surfaceIdMatch = String(well.surface_id || '').includes(searchTerm);
       const wellIdMatch = String(well.wellid || '').toLowerCase().includes(searchTerm);
       const leaseMatch = (details.lease_name || '').toLowerCase().includes(searchTerm);
       const operatorMatch = (details.operator_name || '').toLowerCase().includes(searchTerm);
       const fieldMatch = (details.field_name || '').toLowerCase().includes(searchTerm);
       const countyMatch = (details.county_name || '').toLowerCase().includes(searchTerm);
 
-      if (apiMatch || wellIdMatch || leaseMatch || operatorMatch || fieldMatch || countyMatch || surfaceIdMatch) {
+      if (apiMatch || wellIdMatch || leaseMatch || operatorMatch || fieldMatch || countyMatch) {
         matches.push({
           id: well.surface_id,
           api: well.api,
@@ -1078,7 +979,6 @@ app.get('/api/search', async (req, res) => {
           detailsAvailable: true,
           hasLocation: true,
           matchType: apiMatch ? 'API' :
-            surfaceIdMatch ? 'Surface ID' :
             wellIdMatch ? 'Well ID' :
             leaseMatch ? 'Lease' :
             operatorMatch ? 'Operator' :
@@ -1156,7 +1056,7 @@ app.post('/api/cache/reload', async (req, res) => {
     await loadActiveWellIds();
     await loadAllWells();
     await loadWellDetails();
-    await loadProductionStatistics();
+    await loadTCEQData();
     await initializeSupercluster();
     res.json({
       success: true,
@@ -1182,6 +1082,21 @@ app.get('/', (req, res) => {
   });
 });
 
+// GET /api/contamination-data - Get coordinates for water contamination heatmap
+app.get('/api/contamination-data', async (req, res) => {
+  try {
+    if (!tceqDataCache) {
+      console.log('TCEQ cache not ready, fetching on demand...');
+      await loadTCEQData();
+    }
+    
+    res.json(tceqDataCache || []);
+  } catch (error) {
+    console.error('Error in /api/contamination-data:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Start server and load wells
 app.listen(PORT, async () => {
   console.log(`TOIL Backend server running on port ${PORT}`);
@@ -1191,7 +1106,7 @@ app.listen(PORT, async () => {
     await loadActiveWellIds();
     await loadAllWells();
     await loadWellDetails();
-    await loadProductionStatistics();
+    await loadTCEQData();
     await initializeSupercluster();
     console.log('Server is ready to handle requests!');
   } catch (error) {

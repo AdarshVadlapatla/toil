@@ -11,6 +11,7 @@ const Map = forwardRef(({ filters }, ref) => {
   const mapInstanceRef = useRef(null);
   const markersLayerRef = useRef(null);
   const highlightMarkerRef = useRef(null);
+  const waterOverlayLayerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Loading wells...');
   const [wellCount, setWellCount] = useState({ filtered: 0, total: 0 });
@@ -322,11 +323,90 @@ const Map = forwardRef(({ filters }, ref) => {
       }
     }, 300);
   };
+ 
+  // Function to load and display water contamination data
+  const loadWaterOverlay = async () => {
+    if (!mapInstanceRef.current || !filters.showWaterOverlay) {
+      if (waterOverlayLayerRef.current) {
+        mapInstanceRef.current.removeLayer(waterOverlayLayerRef.current);
+        waterOverlayLayerRef.current = null;
+      }
+      return;
+    }
 
-  // Load wells when filters change
+    try {
+      setLoadingMessage('Loading water data...');
+      setIsLoading(true);
+      console.log('Water Overlay: Fetching contamination data...');
+
+      const L = (await import('leaflet')).default;
+      // Ensure L is on window for plugins
+      window.L = L;
+
+      // 1. Load Heatmap data from our new API
+      const response = await fetch(`${API_URL}/api/contamination-data`);
+      
+      if (!response.ok) {
+        if (response.status === 503) {
+          console.log('Water Overlay: Backend still loading well cache, retrying in 3s...');
+          setTimeout(loadWaterOverlay, 3000);
+          return;
+        }
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`Water Overlay: Received ${data.length} contamination data points.`);
+
+      if (data && data.length > 0) {
+        // Prepare data for heat layer: [lat, lng, intensity]
+        const heatPoints = data.map(p => [p.lat, p.lng, p.intensity * 5]); // Stronger boost
+
+        // Ensure leaflet-heat is available
+        if (!window.L.heatLayer) {
+          console.log('Water Overlay: Loading leaflet-heat from CDN...');
+          // Load leaflet-heat via CDN dynamically
+          await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+        }
+
+        if (waterOverlayLayerRef.current) {
+          mapInstanceRef.current.removeLayer(waterOverlayLayerRef.current);
+        }
+
+        // Create the heat layer
+        waterOverlayLayerRef.current = window.L.heatLayer(heatPoints, {
+          radius: 35, // Increased for better visibility
+          blur: 15,
+          maxZoom: 17,
+          gradient: {
+            0.4: '#3b82f6', // Blue (low risk)
+            0.6: '#fbbf24', // Amber
+            0.8: '#f97316', // Orange
+            1.0: '#ef4444'  // Red (high risk)
+          }
+        }).addTo(mapInstanceRef.current);
+        console.log('Water Overlay: Heatmap rendered.');
+      }
+
+    } catch (error) {
+      console.error('Error loading water overlay:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Load wells or water overlay when filters change
   useEffect(() => {
+    console.log('Map: Filters changed:', filters);
     if (mapInstanceRef.current) {
       loadWells();
+      loadWaterOverlay();
     }
   }, [filters]);
 
@@ -381,6 +461,9 @@ const Map = forwardRef(({ filters }, ref) => {
         mapInstanceRef.current.off('zoomend', loadWells);
         mapInstanceRef.current.off('moveend', loadWells);
         clearMarkers();
+        if (waterOverlayLayerRef.current) {
+          mapInstanceRef.current.removeLayer(waterOverlayLayerRef.current);
+        }
         if (highlightMarkerRef.current) {
           mapInstanceRef.current.removeLayer(highlightMarkerRef.current);
         }

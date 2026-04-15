@@ -21,7 +21,9 @@ export default function Filters({ onApplyFilters }) {
     productionAvgMin: '',
     productionAvgMax: '',
     productionMaxMin: '',
+    productionMaxMin: '',
     productionMaxMax: '',
+    showWaterOverlay: false,
   });
 
   const [options, setOptions] = useState({
@@ -47,6 +49,7 @@ export default function Filters({ onApplyFilters }) {
     districts: false,
     operators: false,
     fields: false,
+    layers: true,
   });
 
   // Fetch filter options from server
@@ -89,7 +92,13 @@ export default function Filters({ onApplyFilters }) {
   };
 
   const handleInputChange = (field, value) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
+    const updatedFilters = { ...filters, [field]: value };
+    setFilters(updatedFilters);
+    
+    // If it's a map layer toggle, apply immediately for better UX
+    if (field === 'showWaterOverlay' && onApplyFilters) {
+      onApplyFilters(updatedFilters);
+    }
   };
 
   const handleSearchChange = (field, value) => {
@@ -145,6 +154,7 @@ export default function Filters({ onApplyFilters }) {
         productionAvgMax: '',
         productionMaxMin: '',
         productionMaxMax: '',
+        showWaterOverlay: false,
       });
     }
   };
@@ -171,6 +181,42 @@ export default function Filters({ onApplyFilters }) {
 
   return (
     <div className={styles.filtersContainer}>
+      {/* Map Layers Section */}
+      <section className={styles.section}>
+        <button 
+          className={styles.sectionHeader}
+          onClick={() => toggleSection('layers')}
+        >
+          <h3 className={styles.sectionTitle}>Map Layers</h3>
+          <svg 
+            className={`${styles.chevron} ${expandedSections.layers ? styles.chevronUp : ''}`}
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor"
+          >
+            <path d="M6 9l6 6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        
+        {expandedSections.layers && (
+          <div className={styles.sectionContent}>
+            <div className={styles.field}>
+              <label className={styles.checkbox}>
+                <input
+                  type="checkbox"
+                  checked={filters.showWaterOverlay || false}
+                  onChange={(e) => handleInputChange('showWaterOverlay', e.target.checked)}
+                />
+                Water Contamination Overlay
+              </label>
+              <p className={styles.layerDescription}>
+                Official TCEQ Ground Water Contamination cases (Joint Monitoring Report 2024).
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* Location Filters */}
       <section className={styles.section}>
         <button 

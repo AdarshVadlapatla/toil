@@ -261,6 +261,14 @@
   flex-shrink: 0;
 }
 
+.layerDescription {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 0.25rem;
+  margin-left: 1.875rem;
+  line-height: 1.4;
+}
+
 .noResults {
   text-align: center;
   padding: 1.5rem;
