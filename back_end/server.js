@@ -154,7 +154,11 @@ async function loadAllWells() {
 
 async function loadWellDetails() {
   console.log('Loading well details for filtering...');
-  let wellDetails = await fetchKeysetPaginated('well_information', 'api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name','plug_date', 'api_no');
+  let wellDetails = await fetchKeysetPaginated(
+    'well_information',
+    'api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name, plug_date',
+    'api_no'
+  );
 
   console.log(`Well details loaded! Total: ${wellDetails.length}`);
   wellsWithDetailsCache = wellDetails;
