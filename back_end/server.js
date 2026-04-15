@@ -154,7 +154,7 @@ async function loadAllWells() {
 
 async function loadWellDetails() {
   console.log('Loading well details for filtering...');
-  let wellDetails = await fetchKeysetPaginated('well_information', 'api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name', 'api_no');
+  let wellDetails = await fetchKeysetPaginated('well_information', 'api_no, county_name, county_code, district_code, oil_gas_code, completion_date, api_depth, lease_name, well_no, operator_name, field_name','plug_date', 'api_no');
 
   console.log(`Well details loaded! Total: ${wellDetails.length}`);
   wellsWithDetailsCache = wellDetails;
@@ -1034,7 +1034,6 @@ app.get('/api/search', async (req, res) => {
       return res.json({ results: [] });
     }
 
-    // Check if cache is loaded
     if (!wellsCache || !wellsWithDetailsCache) {
       return res.status(503).json({
         error: 'Wells data is still loading. Please try again in a moment.',
@@ -1043,26 +1042,19 @@ app.get('/api/search', async (req, res) => {
     }
 
     const searchTerm = query.toLowerCase().trim();
-
-    // Use the global map instead of recreating it
-    // Search through wells and collect matches
     const matches = [];
     const maxResults = 10;
+    const seenApis = new Set();
 
     console.log(`Searching for "${searchTerm}"...`);
 
+    // First: search normal wells that have location data
     for (const well of wellsCache) {
       if (matches.length >= maxResults) break;
 
       const details = globalApiToDetails[String(well.api)];
-      if (!details) {
-        if (well.surface_id === 157334) console.log(`[DEBUG] Missing details for 157334, API: ${well.api}`);
-        continue;
-      }
+      if (!details) continue;
 
-      if (well.surface_id === 157334) console.log(`[DEBUG] Found details for 157334: ${details.lease_name}`);
-
-      // Search across multiple fields
       const apiMatch = String(well.api || '').toLowerCase().includes(searchTerm);
       const surfaceIdMatch = String(well.surface_id || '').includes(searchTerm);
       const wellIdMatch = String(well.wellid || '').toLowerCase().includes(searchTerm);
@@ -1080,15 +1072,56 @@ app.get('/api/search', async (req, res) => {
           operatorName: details.operator_name || 'Unknown Operator',
           fieldName: details.field_name || 'Unknown Field',
           countyName: details.county_name || 'Unknown County',
+          plugDate: details.plug_date || null,
           lat: well.lat83,
           lon: well.long83,
+          detailsAvailable: true,
+          hasLocation: true,
           matchType: apiMatch ? 'API' :
             surfaceIdMatch ? 'Surface ID' :
-              wellIdMatch ? 'Well ID' :
-                leaseMatch ? 'Lease' :
-                  operatorMatch ? 'Operator' :
-                    fieldMatch ? 'Field' : 'County'
+            wellIdMatch ? 'Well ID' :
+            leaseMatch ? 'Lease' :
+            operatorMatch ? 'Operator' :
+            fieldMatch ? 'Field' : 'County'
         });
+
+        seenApis.add(String(well.api));
+      }
+    }
+
+    // Second: search detail-only wells with no matching location row
+    if (matches.length < maxResults) {
+      for (const [apiNo, details] of Object.entries(globalApiToDetails)) {
+        if (matches.length >= maxResults) break;
+        if (seenApis.has(apiNo)) continue;
+
+        const apiMatch = apiNo.toLowerCase().includes(searchTerm);
+        const leaseMatch = (details.lease_name || '').toLowerCase().includes(searchTerm);
+        const operatorMatch = (details.operator_name || '').toLowerCase().includes(searchTerm);
+        const fieldMatch = (details.field_name || '').toLowerCase().includes(searchTerm);
+        const countyMatch = (details.county_name || '').toLowerCase().includes(searchTerm);
+
+        if (apiMatch || leaseMatch || operatorMatch || fieldMatch || countyMatch) {
+          matches.push({
+            id: null,
+            api: apiNo,
+            wellid: null,
+            leaseName: details.lease_name || 'Unknown Lease',
+            operatorName: details.operator_name || 'Unknown Operator',
+            fieldName: details.field_name || 'Unknown Field',
+            countyName: details.county_name || 'Unknown County',
+            plugDate: details.plug_date || null,
+            lat: null,
+            lon: null,
+            detailsAvailable: true,
+            hasLocation: false,
+            incomplete: true,
+            matchType: apiMatch ? 'API' :
+              leaseMatch ? 'Lease' :
+              operatorMatch ? 'Operator' :
+              fieldMatch ? 'Field' : 'County'
+          });
+        }
       }
     }
 
