@@ -15,6 +15,7 @@ export default function MapWrapper() {
     completionDateEnd: '',
     depthMin: '',
     depthMax: '',
+    showWaterOverlay: false,
   });
 
   const mapRef = useRef(null);
