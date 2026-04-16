@@ -119,7 +119,7 @@ export default function SearchBar({ onSelectWell }) {
         <div className={styles.resultsDropdown}>
           {searchResults.map((result) => (
             <button
-              key={result.id}
+              key={result.id ?? result.api}
               className={styles.resultItem}
               onClick={() => handleSelectResult(result)}
             >
