@@ -929,6 +929,67 @@ app.get('/api/wells/:id/compliance', async (req, res) => {
   }
 });
 
+// GET /api/wells/by-api/:apiNo - Get well details directly by API number
+app.get('/api/wells/by-api/:apiNo', async (req, res) => {
+  try {
+    const rawApi = req.params.apiNo;
+
+    if (!rawApi) {
+      return res.status(400).json({ error: 'apiNo is required' });
+    }
+
+    // Normalize: allow both 47501399 and 475-01399
+    const normalizedApi = String(rawApi).replace(/-/g, '').trim();
+
+    const { data: detailData, error: detailError } = await supabase
+      .from('well_information')
+      .select('*')
+      .eq('api_no', normalizedApi)
+      .maybeSingle();
+
+    if (detailError) {
+      console.error('Detail query error:', detailError);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+
+    if (!detailData) {
+      return res.status(404).json({ error: 'Well not found' });
+    }
+
+    // Try to find matching location data if it exists
+    const { data: locationData, error: locationError } = await supabase
+      .from('well_locations')
+      .select('*')
+      .eq('api', normalizedApi)
+      .maybeSingle();
+
+    if (locationError) {
+      console.error('Location query error:', locationError);
+    }
+
+    const wellTypeName =
+      detailData.oil_gas_code === 'O'
+        ? 'Oil'
+        : detailData.oil_gas_code === 'G'
+        ? 'Gas'
+        : 'Unknown';
+
+    res.json({
+      apiLookup: true,
+      api_no: normalizedApi,
+      detailsAvailable: true,
+      hasLocation: !!locationData,
+      isActive: locationData ? activeWellIds.has(locationData.surface_id) : false,
+      ...(locationData || {}),
+      ...detailData,
+      well_type_name: wellTypeName
+    });
+  } catch (error) {
+    console.error('Error fetching well by API:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/search - Search wells with autocomplete (using Supabase index)
 app.get('/api/search', async (req, res) => {
   try {

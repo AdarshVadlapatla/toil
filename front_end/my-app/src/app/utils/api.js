@@ -92,3 +92,13 @@ export async function fetchComplianceData(wellId) {
   return response.json();
 }
 
+export async function fetchWellDetailsByApi(apiNo) {
+  const response = await fetch(`${API_URL}/api/wells/by-api/${apiNo}`);
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+

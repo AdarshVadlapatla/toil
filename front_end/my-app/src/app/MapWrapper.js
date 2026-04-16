@@ -5,6 +5,7 @@ import styles from './page.module.css';
 import Map from './map';
 import Filters from './filters';
 import SearchBar from './SearchBar';
+import { fetchWellDetails, fetchWellDetailsByApi } from './utils/api';
 
 export default function MapWrapper() {
   const [activeFilters, setActiveFilters] = useState({
@@ -25,11 +26,27 @@ export default function MapWrapper() {
     setActiveFilters(filters);
   };
 
-  const handleSelectWell = (well) => {
-    console.log('Selected well:', well);
-    // Pass the selected well to the Map component
-    if (mapRef.current) {
-      mapRef.current.zoomToWell(well);
+  const handleSelectWell = async (result) => {
+    console.log('Selected well:', result);
+
+    try {
+      let fullWell;
+
+      if (result.hasLocation && result.id) {
+        // Normal wells
+        fullWell = await fetchWellDetails(result.id);
+      } else {
+        // API-only wells
+        fullWell = await fetchWellDetailsByApi(result.api);
+      }
+
+      console.log('Full well data:', fullWell);
+
+      if (mapRef.current) {
+        mapRef.current.zoomToWell(fullWell);
+      }
+    } catch (error) {
+      console.error('Failed to fetch well details:', error);
     }
   };
 
