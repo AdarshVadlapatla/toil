@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { fetchWellDetails, fetchProductionData, fetchComplianceData } from '../../utils/api';
+import { fetchWellDetailsByApi, fetchProductionData, fetchComplianceData } from '../../../utils/api';
 import HelpModal from '../../HelpModal';
 import ProductionChart from '@/app/ProductionChart';
 import CompliancePanel from './CompliancePanel';
@@ -20,8 +20,13 @@ export default function WellDetailPage() {
   const handleDownload = async () => {
     try {
       setDownloading(true);
-      const productionDataResult = await fetchProductionData(params.id);
-      const complianceDataResult = await fetchComplianceData(params.id);
+      let productionDataResult = { available: false, production: [] };
+      let complianceDataResult = { available: false, inspections: [], violations: [], summary: {} };
+
+      if (well?.surface_id) {
+        productionDataResult = await fetchProductionData(well.surface_id);
+        complianceDataResult = await fetchComplianceData(well.surface_id);
+      }
 
       let csvContent = "data:text/csv;charset=utf-8,";
 
@@ -97,22 +102,22 @@ export default function WellDetailPage() {
 
   useEffect(() => {
     const loadWellDetails = async () => {
-      try {
+        try {
         setLoading(true);
-        const data = await fetchWellDetails(params.id);
+        const data = await fetchWellDetailsByApi(params.apiNo);
         setWell(data);
-      } catch (err) {
+        } catch (err) {
         console.error('Error loading well details:', err);
         setError('Failed to load well information');
-      } finally {
+        } finally {
         setLoading(false);
-      }
+        }
     };
 
-    if (params.id) {
-      loadWellDetails();
+    if (params.apiNo) {
+        loadWellDetails();
     }
-  }, [params.id]);
+    }, [params.apiNo]);
 
   if (loading) {
     return (

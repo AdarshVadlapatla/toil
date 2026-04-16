@@ -1,0 +1,160 @@
+.panel {
+    background-color: #2d3748;
+    border-radius: 8px;
+    padding: 1.5rem;
+    color: #e5e7eb;
+}
+
+.summaryHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #4a5568;
+}
+
+.statusBadgeCompliant {
+    background-color: #065f46;
+    color: #34d399;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    border: 1px solid #059669;
+}
+
+.statusBadgeNonCompliant {
+    background-color: #7f1d1d;
+    color: #f87171;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    border: 1px solid #991b1b;
+}
+
+.statusBadgeNeutral {
+    background-color: #374151;
+    color: #9ca3af;
+    padding: 0.5rem 1rem;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    border: 1px solid #4b5563;
+}
+
+.summaryMetrics {
+    display: flex;
+    gap: 2rem;
+}
+
+.summaryMetric {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.summaryLabel {
+    font-size: 0.75rem;
+    color: #a0aec0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.summaryValue {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #f7fafc;
+}
+
+.section {
+    margin-top: 1.5rem;
+}
+
+.sectionTitle {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #cbd5e0;
+    margin-bottom: 1rem;
+}
+
+.tableWrapper {
+    overflow-x: auto;
+    border-radius: 6px;
+    background-color: #1a202c;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+}
+
+.table th {
+    background-color: #1f2937;
+    padding: 0.75rem 1rem;
+    color: #a0aec0;
+    font-weight: 600;
+    border-bottom: 1px solid #374151;
+}
+
+.table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #2d3748;
+}
+
+.table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.tagOpen {
+    background-color: #7f1d1d;
+    color: #fca5a5;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.tagClosed {
+    background-color: #064e3b;
+    color: #6ee7b7;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.tagPass {
+    background-color: #064e3b;
+    color: #34d399;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.tagFail {
+    background-color: #7f1d1d;
+    color: #f87171;
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.loading,
+.error,
+.noData {
+    background-color: #2d3748;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    color: #a0aec0;
+}
+
+.noData p {
+    margin-top: 1rem;
+}
