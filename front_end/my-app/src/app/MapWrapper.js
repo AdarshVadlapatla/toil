@@ -6,6 +6,7 @@ import Map from './map';
 import Filters from './filters';
 import SearchBar from './SearchBar';
 import { fetchWellDetails, fetchWellDetailsByApi } from './utils/api';
+import { useRouter } from 'next/navigation';
 
 export default function MapWrapper() {
   const [activeFilters, setActiveFilters] = useState({
@@ -19,6 +20,7 @@ export default function MapWrapper() {
     showWaterOverlay: false,
   });
 
+  const router = useRouter();
   const mapRef = useRef(null);
 
   const handleApplyFilters = (filters) => {
@@ -29,24 +31,10 @@ export default function MapWrapper() {
   const handleSelectWell = async (result) => {
     console.log('Selected well:', result);
 
-    try {
-      let fullWell;
-
-      if (result.hasLocation && result.id) {
-        // Normal wells
-        fullWell = await fetchWellDetails(result.id);
-      } else {
-        // API-only wells
-        fullWell = await fetchWellDetailsByApi(result.api);
-      }
-
-      console.log('Full well data:', fullWell);
-
-      if (mapRef.current) {
-        mapRef.current.zoomToWell(fullWell);
-      }
-    } catch (error) {
-      console.error('Failed to fetch well details:', error);
+    if (result.hasLocation && result.id) {
+      router.push(`/wells/${result.id}`);
+    } else {
+      router.push(`/wells/by-api/${result.api}`);
     }
   };
 
