@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchWellDetailsByApi, fetchProductionData, fetchComplianceData } from '../../../utils/api';
-import HelpModal from '../../HelpModal';
+import HelpModal from '../../../HelpModal';
 import ProductionChart from '@/app/ProductionChart';
 import CompliancePanel from './CompliancePanel';
 import styles from './page.module.css';

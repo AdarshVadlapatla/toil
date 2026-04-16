@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchComplianceData } from '../../utils/api';
+import { fetchComplianceData } from '../../../utils/api';
 import styles from './CompliancePanel.module.css';
 
 export default function CompliancePanel({ wellId }) {
